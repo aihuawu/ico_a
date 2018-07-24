@@ -1,184 +1,378 @@
 
-pragma solidity ^0.4.23;
-import "zeppelin/contracts/ownership/Ownable.sol";
-import "zeppelin/contracts/token/ERC20/ERC20Basic.sol";
-import "zeppelin/contracts/token/ERC20/StandardToken.sol";
-import "zeppelin/contracts/token/ERC20/DetailedERC20.sol";
-import "zeppelin/contracts/token/ERC20/MintableToken.sol";
-import "zeppelin/contracts/token/ERC20/PausableToken.sol";
-/**
-https://solidity.readthedocs.io/en/v0.4.24/contracts.html#inheritance
-for multiple inheritance, pay attention to inheritance sequence, inheritance graph. 
-*/
-contract Recoverable is Ownable {
-	constructor() public {
+pragma solidity ^ 0.4.23;
+
+import "./ERC20.sol";
+import "./Util.sol";
+import "./StandardToken.sol";
+import "./Ownable.sol";
+import "./Vault.sol";
+
+
+contract CrowdsaleTokenBase is
+StandardToken, Recoverable, Pausable
+{
+	Util.TokenInfo public tokenInfo;
+	FoundersTokenVault foundersVault;
+	VotableTokenVault voteVault;
+
+	modifier onlySale() {
+		require(msg.sender == address(tokenInfo.sale));
+		_;
 	}
-	function recoverTokens(ERC20Basic token) onlyOwner public {
-		token.transfer(owner, tokensToBeReturned(token));
-	}
-	function tokensToBeReturned(ERC20Basic token) public view returns (uint) {
-		return token.balanceOf(this);
+
+}
+
+
+contract FoundersToken is CrowdsaleTokenBase {
+
+
+	function unlockfoundersToken(address _to)
+	public
+	{
+		foundersVault.unlock(_to);
 	}
 }
-contract StandardTokenExt is DetailedERC20, StandardToken, Recoverable, 
-		PausableToken, MintableToken {
-	function isToken() public constant returns (bool weAre) {
-		return true;
+
+contract VotableToken is CrowdsaleTokenBase {
+
+	function startProposal(string title, string url)
+	public
+	returns(uint256 ProposalID)
+	{
+		require(address(voteVault) != address(0x0));
+		uint256 amount = balanceOf(msg.sender);
+		if (amount > 0) {
+			transfer(voteVault, amount);
+		}
+		uint256 total = totalSupply();
+
+		// solium-disable-next-line security/no-block-members
+		return voteVault.startProposal(msg.sender, title, url, amount, now.add(tokenInfo.voteLockSeconds), total);
 	}
+	function voteProposal(uint256 id)
+	public
+	{
+		require(address(voteVault) != address(0x0));
+		uint256 amount = balanceOf(msg.sender);
+		if (amount > 0) {
+			transfer(voteVault, amount);
+		}
+
+		// solium-disable-next-line security/no-block-members
+		voteVault.voteProposal(msg.sender, id, amount, now.add(tokenInfo.voteLockSeconds));
+	}
+	function unlockVotableToken()
+	public
+	{
+		voteVault.unlockVotableToken(msg.sender);
+	}
+
+
+	function voteTotalSupply() public view returns(uint256) {
+		return voteVault.totalSupply();
+	}
+	function voteBalanceOf(address _owner) public view returns(uint256) {
+		return voteVault.balanceOf(_owner);
+	}
+
 }
-contract ReleasableToken is StandardTokenExt {
-	address public releaseAgent;
-	bool public released = false;
-	mapping(address => bool) public transferAgents;
+
+
+contract ReleasableToken is CrowdsaleTokenBase {
+
+	mapping(address => bool) transferAgents;
+
+	modifier whenNotRefunded() {
+		require(!tokenInfo.refunded);
+		_;
+	}
 	modifier canTransfer(address _sender) {
-		if (!released) {
+		if (!tokenInfo.released) {
 			if (!transferAgents[_sender]) {
 				revert();
 			}
 		}
 		_;
 	}
-	function setReleaseAgent(address addr) onlyOwner inReleaseState(false) public {
-		releaseAgent = addr;
-	}
-	function setTransferAgent(address addr, bool state) onlyOwner inReleaseState(false) public {
-		transferAgents[addr] = state;
-	}
-	function releaseTokenTransfer() public onlyReleaseAgent {
-		released = true;
-	}
 	modifier inReleaseState(bool releaseState) {
-		if (releaseState != released) {
+		if (releaseState != tokenInfo.released) {
 			revert();
 		}
 		_;
 	}
 	modifier onlyReleaseAgent() {
-		if (msg.sender != releaseAgent) {
+		if (msg.sender != tokenInfo.releaseAgent) {
 			revert();
 		}
 		_;
 	}
-	function transfer(address _to, uint _value) canTransfer(msg.sender) public returns(bool success) {
+
+	function setReleaseAgent(address addr)
+	public
+	fromOwnerOrMaster inReleaseState(false)
+	{
+		tokenInfo.releaseAgent = addr;
+	}
+	function setTransferAgent(address addr, bool state)
+	public
+	fromOwnerOrMaster inReleaseState(false)
+	{
+		transferAgents[addr] = state;
+	}
+	function releaseTokenTransfer()
+	public
+	onlyReleaseAgent
+	{
+		tokenInfo.released = true;
+	}
+
+	function enableRefunds()
+	public
+	onlySale
+	{
+		tokenInfo.refunded = true;
+	}
+
+	function transfer(address _to, uint _value)
+	public
+	canTransfer(msg.sender)
+	whenNotPaused
+	whenNotRefunded
+	returns(bool success)
+	{
 		return super.transfer(_to, _value);
 	}
-	function transferFrom(address _from, address _to, uint _value) public canTransfer(_from) returns (bool success) {
+	function transferFrom(address _from, address _to, uint _value)
+	public
+	canTransfer(_from)
+	whenNotPaused
+	whenNotRefunded
+	returns(bool success)
+	{
 		return super.transferFrom(_from, _to, _value);
 	}
-}
-contract TimeVaultIndicator {
-	bool public isTimeVault = true;
+
+
+	function approve(
+		address _spender,
+		uint256 _value
+	)
+	public
+	whenNotPaused
+	whenNotRefunded
+	returns(bool)
+	{
+		return super.approve(_spender, _value);
+	}
+
+	function increaseApproval(
+		address _spender,
+		uint _addedValue
+	)
+	public
+	whenNotPaused
+	whenNotRefunded
+	returns(bool success)
+	{
+		return super.increaseApproval(_spender, _addedValue);
+	}
+
+	function decreaseApproval(
+		address _spender,
+		uint _subtractedValue
+	)
+	public
+	whenNotPaused
+	whenNotRefunded
+	returns(bool success)
+	{
+		return super.decreaseApproval(_spender, _subtractedValue);
+	}
 }
 
-contract UpgradeAgent {
-	uint public originalSupply;
-	function isUpgradeAgent() public pure returns (bool) {
-		return true;
-	}
-	function upgradeFrom(address _from, uint256 _value) public; 
-	function vaultUpgradeFrom(address _from, uint256 _value) public; 
+
+
+
+contract IUpgradeable {
+	function upgrade() external;
+	function receiveUpgrade(address to, uint256 amount, uint256 lockEndAt, uint256 vaultType)external;
 }
-contract UpgradeableToken is StandardTokenExt {
-	UpgradeAgent public upgradeAgent;
-	uint256 public totalUpgraded;
-	enum UpgradeState { Unknown, NotAllowed, WaitingForAgent, ReadyToUpgrade, Upgrading }
-	event Upgrade(address indexed _from, address indexed _to, uint256 _value);
-	event VaultUpgrade(address indexed _from, address indexed _to, uint256 _value);
-	event UpgradeAgentSet(address agent);
-	
-	function _upgrade(uint256 value) internal {
-		UpgradeState state = getUpgradeState();
-		if (!(state == UpgradeState.ReadyToUpgrade || state == UpgradeState.Upgrading)) {
-			revert();
+
+
+contract UpgradeableToken is IUpgradeable, CrowdsaleTokenBase, FoundersToken {
+	event Upgrade(address indexed _from, address indexed _to, uint256 _value, uint256 lockEndAt, uint256 vaultType);
+	event ReceiveUpgrade(address indexed _from, address indexed _to, uint256 _value, uint256 lockEndAt, uint256 vaultType);
+
+
+	Util.Balance burnt;
+
+
+	modifier inUpgradable() {
+		require(tokenInfo.inUpgrading);
+		require(tokenInfo.inToken != 0);
+		require(tokenInfo.inToken == msg.sender);
+		_;
+	}
+	modifier outUpgradable() {
+		require(tokenInfo.outUpgrading);
+		require(tokenInfo.outToken != 0);
+		_;
+	}
+	function setInToken(address _inToken)
+	external fromOwnerOrMaster  {
+		tokenInfo.inToken = _inToken;
+	}
+	function setOutToken(address _outToken)
+	external fromOwnerOrMaster  {
+		tokenInfo.outToken = _outToken;
+	}
+
+	function enableInUpgrading()
+	external fromOwnerOrMaster  {
+		require(tokenInfo.inToken != 0);
+		tokenInfo.inUpgrading = true;
+	}
+
+	function enableOutUpgrading()
+	external fromOwnerOrMaster  {
+		require(tokenInfo.outToken != 0);
+		tokenInfo.outUpgrading = true;
+	}
+
+
+	function burntTotalSupply() public view returns(uint256) {
+		return Util.totalSupply(burnt);
+	}
+	function burntBalanceOf(address _owner) public view returns(uint256) {
+		return Util.balanceOf(burnt, _owner);
+	}
+
+
+	function upgrade()
+	external
+	outUpgradable
+	{
+		upgradeUser(msg.sender);
+
+	}
+
+
+
+	// https://steemit.com/ethereum/@johannlilly/executing-functions-on-other-contracts-with-multisig-wallets-or-multisig-functions-on-ethereum
+	// multi-sig can't call other contract function easily?
+	// normal account can call other contract.
+	function upgradeUser(address user)
+	public
+	outUpgradable
+	{
+		voteVault.forceUnlockVotableToken(user);
+		uint256 amount0 = balanceOf(user); // balance here
+		burnMintTransfer(user, user, amount0, 0, 0);
+
+		(uint256 amount1, uint256 until1) = foundersVault.freezeInfo(user);
+		burnMintTransfer(foundersVault, user, amount1, until1, 1);
+		foundersVault.burnMint(user);
+	}
+
+	function burnMintTransfer(address user, address beneficiary, uint256 amount, uint256 unlockedAt, uint256 vaultType)
+	private
+	{
+		if (amount > 0) {
+			Util.burn(account, user, amount);
+			Util.mint(burnt, user, amount);
+			IUpgradeable(tokenInfo.outToken).receiveUpgrade(beneficiary, amount, unlockedAt, vaultType);
+			emit Upgrade(user, tokenInfo.outToken, amount, unlockedAt, vaultType);
 		}
-		if (value == 0) revert();
-		balances[msg.sender] = balances[msg.sender].sub(value);
-		totalSupply_ = totalSupply_.sub(value);
-		totalUpgraded = totalUpgraded.add(value);
 	}
-	function upgrade(uint256 value) public {
-		_upgrade(value);
-		upgradeAgent.upgradeFrom(msg.sender, value);
-		emit Upgrade(msg.sender, upgradeAgent, value);
-	}
-	function vaultUpgrade(uint256 value) public {
-		if(!TimeVaultIndicator(msg.sender).isTimeVault()) revert();
-		_upgrade(value);
-		upgradeAgent.vaultUpgradeFrom(msg.sender, value);
-		emit VaultUpgrade(msg.sender, upgradeAgent, value);
-	}
-	function setUpgradeAgent(address agent) onlyOwner external {
-		if (!canUpgrade()) {
-			revert();
+
+
+
+	function receiveUpgrade(address to, uint256 amount, uint256 lockEndAt, uint256 vaultType)
+	external
+	inUpgradable
+	{
+		if (vaultType == 1) {
+			mintForFounders(to, amount, lockEndAt);
+		} else {
+			Util.mint(account, to, amount);
 		}
-		if (agent == 0x0) revert();
-		if (getUpgradeState() == UpgradeState.Upgrading) revert();
-		upgradeAgent = UpgradeAgent(agent);
-		if (!upgradeAgent.isUpgradeAgent()) revert();
-		if (upgradeAgent.originalSupply() != totalSupply_) revert();
-		emit UpgradeAgentSet(upgradeAgent);
+		emit ReceiveUpgrade(msg.sender, to, amount, lockEndAt, vaultType);
 	}
-	function getUpgradeState() public constant returns(UpgradeState) {
-		if (!canUpgrade()) return UpgradeState.NotAllowed;
-		else if (address(upgradeAgent) == 0x00) return UpgradeState.WaitingForAgent;
-		else if (totalUpgraded == 0) return UpgradeState.ReadyToUpgrade;
-		else return UpgradeState.Upgrading;
+
+	function mintForFounders(
+		address _teamMultisig, uint256 _amount, uint256 _unlockedAt)
+	internal
+	{
+		foundersVault.lock(_teamMultisig, _amount, _unlockedAt);
+		Util.mint(account, foundersVault, _amount);
 	}
-	function canUpgrade() public view returns(bool) { 
-		return true;
-	}
+
 }
-contract CrowdsaleToken is ReleasableToken, UpgradeableToken {
+
+
+
+
+
+
+contract DetailedERC20 is CrowdsaleTokenBase {
 	event UpdatedTokenInformation(string newName, string newSymbol);
-	constructor(string _name, string _symbol, uint _initialSupply, uint8 _decimals)
-	public {
-		owner = msg.sender;
-		name = _name;
-		symbol = _symbol;
-		totalSupply_ = _initialSupply;
-		decimals = _decimals;
-		balances[owner] = totalSupply_;
-		if (totalSupply_ > 0) {
-			emit Mint(owner, totalSupply_);
-		}
+
+	string public url;
+	string public name;
+	string public symbol;
+	uint8 public decimals;
+
+
+	function deliverTokens(
+		address _beneficiary,
+		uint256 _tokenAmount
+	)
+	external
+	onlySale
+	{
+		require(tokenInfo.sale != 0);
+		Util.mint(account, _beneficiary, _tokenAmount);
 	}
-	function releaseTokenTransfer() public onlyReleaseAgent {
-		mintingFinished = true;
-		super.releaseTokenTransfer();
-	}
-	function canUpgrade() public view returns(bool) {
-		return released && super.canUpgrade();
-	}
-	function setTokenInformation(string _name, string _symbol) public onlyOwner {
+
+
+	function setTokenInformation(string _name, string _symbol)
+	external fromOwnerOrMaster
+	{
 		name = _name;
 		symbol = _symbol;
 		emit UpdatedTokenInformation(name, symbol);
 	}
+	function setUrl(string _url)
+	public fromOwnerOrMaster
+	{
+		url = _url;
+	}
+
 }
 
-contract TimeVault is TimeVaultIndicator {
-	UpgradeableToken public token;
-	address public teamMultisig;
-	uint256 public unlockedAt;
-	event Unlocked();
-	constructor(address _teamMultisig, UpgradeableToken _token, uint256 _unlockedAt) public {
-		teamMultisig = _teamMultisig;
-		token = _token;
-		unlockedAt = _unlockedAt;
-		if (teamMultisig == 0x0) revert();
-		if (address(token) == 0x0) revert();
+
+contract UnionCrowdsaleToken is DetailedERC20,
+	ReleasableToken, FoundersToken, VotableToken, UpgradeableToken {
+
+
+	// solium-disable-next-line indentation
+	function link(address _sale, VotableTokenVault _voteVault,
+		FoundersTokenVault _foundersVault)
+	external fromOwnerOrMaster
+	{
+		tokenInfo.sale = _sale;
+		voteVault = _voteVault;
+		foundersVault = _foundersVault;
+
+		setReleaseAgent(owner);
 	}
-	function getTokenBalance() public constant returns (uint) {
-		return token.balanceOf(address(this));
+
+	function initFoundersTokens(
+		address user, uint256 _amount, uint256 _unlockedAt)
+	external fromOwnerOrMaster
+	{
+		mintForFounders(user, _amount, _unlockedAt);
 	}
-	function unlock() public {
-		if (now < unlockedAt) revert();
-		token.transfer(teamMultisig, getTokenBalance());
-		emit Unlocked();
-	}
-	function upgrade() public {
-		token.vaultUpgrade(getTokenBalance());
-	}
-	function () public { revert(); }
+
 }
 
