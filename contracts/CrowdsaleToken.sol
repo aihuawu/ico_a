@@ -314,10 +314,10 @@ contract UpgradeableToken is IUpgradeable, CrowdsaleTokenBase, FoundersToken {
 
 
 
-contract DetailedERC20 is CrowdsaleTokenBase {
+contract DetailedERC20 is CrowdsaleTokenBase, ERC20Ex {
 	event UpdatedTokenInformation(string newName, string newSymbol);
 
-	string public url;
+	string url;
 	string public name;
 	string public symbol;
 	uint8 public decimals;
@@ -342,6 +342,11 @@ contract DetailedERC20 is CrowdsaleTokenBase {
 		symbol = _symbol;
 		emit UpdatedTokenInformation(name, symbol);
 	}
+
+	function tokenURI() external view returns (string) {
+		return url;
+	}
+	
 	function setUrl(string _url)
 	public fromOwnerOrMaster
 	{

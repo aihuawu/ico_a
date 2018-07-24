@@ -50,7 +50,7 @@ library Util {
 		mapping(address => mapping(address => uint256)) allowed;//dic2
 	}
 
-	enum RefundState { Active, Refunding, Closed } 
+	enum RefundState { Active, Refunding, SoftGoalReached } 
 	struct RefundInfo {
 		uint256 cashed; 
 		address wallet;
@@ -71,9 +71,9 @@ library Util {
 		uint256 openingTime;
 		uint256 closingTime;
 
-		uint256 cap;
+		uint256 hardCap;
 
-		uint256 goal;
+		uint256 softGoal;
 
 		bool isFinalized;
 
@@ -121,7 +121,7 @@ library Util {
 	{
 		return d.total;
 	}
-	
+
 	function balanceOf(Balance storage d, address _owner) 
 	internal view returns(uint256) 
 	{

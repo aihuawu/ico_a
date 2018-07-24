@@ -11,8 +11,7 @@ contract RefundVault is Recoverable { // token is ether
 	using SafeMath for uint256;
 
 	Util.Balance account;
-	// mapping(address => uint256) private balances;
-
+	
 	Util.RefundInfo public refundInfo;
 
 
@@ -21,7 +20,7 @@ contract RefundVault is Recoverable { // token is ether
 		_;
 	}
 
-	event Closed();
+	event SoftGoalReached();
 	event RefundsEnabled();
 	event Refunded(address indexed beneficiary, uint256 weiAmount);
 
@@ -43,26 +42,33 @@ contract RefundVault is Recoverable { // token is ether
 		require(refundInfo.state == Util.RefundState.Active);
 
 		Util.mint(account, investor, msg.value);
-		// balances[investor] = balances[investor].add(msg.value);
-		// refundInfo.totalSupply_ = refundInfo.totalSupply_.add(msg.value);
 	}
-	function close() onlySale public {
-		require(refundInfo.state == Util.RefundState.Active);
-		refundInfo.state = Util.RefundState.Closed;
+	function enableRefunds()  
+	external onlySale
+	{
+		if(refundInfo.state == Util.RefundState.Active){
+			refundInfo.state = Util.RefundState.Refunding;
+			emit RefundsEnabled();
+		}
+	}
+	function softGoalReached() 
+	external onlySale 
+	{
+		if(refundInfo.state == Util.RefundState.Active){
+			refundInfo.state = Util.RefundState.SoftGoalReached;
+			emit SoftGoalReached();
+		}
+	}
+	function beneficiaryWithdraw()  
+	external fromOwnerOrMaster
+	{
+		require(refundInfo.state == Util.RefundState.SoftGoalReached);
 		uint256 r = remains();
 		refundInfo.wallet.transfer(r);
 		refundInfo.cashed = refundInfo.cashed.add(r);
-		emit Closed();
-	}
-	function enableRefunds()  
-	public onlySale
-	{
-		require(refundInfo.state == Util.RefundState.Active);
-		refundInfo.state = Util.RefundState.Refunding;
-		emit RefundsEnabled();
 	}
 	function refund(address investor)
-	public
+	external
 	{
 		require(refundInfo.state == Util.RefundState.Refunding);
 		
@@ -73,7 +79,7 @@ contract RefundVault is Recoverable { // token is ether
 		emit Refunded(investor, amount);
 	}
 
-	function remains() private view returns(uint256) { // ether
+	function remains() public view returns(uint256) { // ether
 		return Util.totalSupply(account).sub(refundInfo.cashed);
 	}
 	function weisToBeReturned() internal view returns(uint256) { // ether

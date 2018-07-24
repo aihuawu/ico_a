@@ -59,12 +59,12 @@ contract Sale is UnionCrowdsale {
 		saleInfo.closingTime = _closingTime;
 		saleInfo.isFinalized = false;
 
-		saleInfo.cap = 1000000 * 100 * _weiPerUSCent;// hard cap, $1 million
-		require(saleInfo.cap > 0);
+		saleInfo.hardCap = 1000000 * 100 * _weiPerUSCent;// hard cap, $1 million
+		require(saleInfo.hardCap > 0);
 
 
-		saleInfo.goal = 1000000 * 100 * _weiPerUSCent / 10;// soft cap, 10%
-		require(saleInfo.goal > 0);
+		saleInfo.softGoal = 1000000 * 100 * _weiPerUSCent / 10;// soft cap, 10%
+		require(saleInfo.softGoal > 0);
 
 
 		saleInfo.multiplier = _multiplier;
@@ -78,23 +78,6 @@ contract Sale is UnionCrowdsale {
 }
 
 
-
-
-/*
-
-
-
-weiPerUSCent = (10^18)/(100*USDPerEther)
-js: e.g. $452.00 for 1 ether
-weiPerUSCent=Math.floor(Math.pow(10,18)/(45200)) = 22.123*(10^12)
-
-priceInWei = (weiPerUSCent * 50 / 10) / (10^9) = 110K
-
-amount = (10^18) / priceInWei = 10^13
-
-
-
-*/
 
 contract Master
 is Recoverable

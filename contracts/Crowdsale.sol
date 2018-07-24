@@ -1,3 +1,4 @@
+
 pragma solidity ^ 0.4.23;
 
 import "./ERC20.sol";
@@ -9,7 +10,7 @@ import "./CrowdsaleToken.sol";
 
 
 
-contract CrowdsaleBase is Recoverable 
+contract CrowdsaleBase is Recoverable
 {
 	using SafeMath for uint256;
 
@@ -27,33 +28,34 @@ contract CrowdsaleBase is Recoverable
 		uint256 amount
 	);
 
-	function url()
-	external 
+	function tokenURI()
+	external
 	view
-	returns (string)
+	returns(string)
 	{
-		return UnionCrowdsaleToken(token).url();
+		return UnionCrowdsaleToken(token).tokenURI();
 	}
 
 
 
-	function () 
-	external payable 
+	function ()
+	external payable
 	{
 		buyTokens(msg.sender);
 	}
 	function buyTokens(address _beneficiary) 
-	public payable 
+	public payable
 	{
 		uint256 weiAmount = msg.value;
 
-		_preValidatePurchase(_beneficiary, weiAmount);
-		uint256 tokens = _getTokenAmount(weiAmount);
+		preValidatePurchase(_beneficiary, weiAmount);
+		uint256 tokens = getTokenAmount(weiAmount);
 
 		UnionCrowdsaleToken(token).deliverTokens(_beneficiary, tokens);
-		_forwardFunds();
+		forwardFunds();
 
 		saleInfo.weiRaised = saleInfo.weiRaised.add(weiAmount);
+		checkCap();
 		emit TokenPurchase(
 			msg.sender,
 			_beneficiary,
@@ -61,52 +63,51 @@ contract CrowdsaleBase is Recoverable
 			tokens
 		);
 	}
-	function _preValidatePurchase(
+	function preValidatePurchase(
 		address _beneficiary,
 		uint256 _weiAmount
 	) internal view; // solium-disable-line indentation
-	
-	
-	
-	function _getTokenAmount(uint256 _weiAmount) internal view returns (uint256);
-	function _forwardFunds() internal;
+
+
+
+	function getTokenAmount(uint256 _weiAmount) internal view returns(uint256);
+	function forwardFunds() internal;
+	function checkCap() internal;
 }
 
 
 contract TrancheCrowdsale is CrowdsaleBase {
-	using SafeMath for uint256;
 
 	function tokenPriceInMilliUSD() 
-	public view returns(uint256) 
+	public view returns(uint256)
 	{
 		uint256 tokensSold = token.totalSupply() - saleInfo.initialAllocatedSupply;
-		uint256 price = _getTokenPriceInMilliUSD(tokensSold);
+		uint256 price = getTokenPriceInMilliUSD(tokensSold);
 		return price;
 	}
 
 
 
-	function _getTokenAmount(uint256 _weiAmount)
+	function getTokenAmount(uint256 _weiAmount)
 	internal view returns(uint256)
 	{
 		uint256 tokensSold = token.totalSupply() - saleInfo.initialAllocatedSupply;
-		
-		uint256 price = _getTokenPriceInWei(tokensSold);
+
+		uint256 price = getTokenPriceInWei(tokensSold);
 		uint256 amount = _weiAmount / price;
 		require(amount > 0);
-		require(tokensSold + amount <= saleInfo.tokenSellTarget);
 		return amount;
 	}
 
-	function _getTokenPriceInWei(uint256 tokensSold) 
-	private view returns(uint256) 
+	function getTokenPriceInWei(uint256 tokensSold) 
+	private view returns(uint256)
 	{
-		uint256 p = _getTokenPriceInMilliUSD(tokensSold);
+		uint256 p = getTokenPriceInMilliUSD(tokensSold);
 		uint256 priceInWei = (saleInfo.weiPerUSCent * p / 10) / (saleInfo.multiplier);
 		return priceInWei;
 	}
-	function _getTokenPriceInMilliUSD(uint256 tokensSold) 
-	private view returns(uint256) 
+	function getTokenPriceInMilliUSD(uint256 tokensSold) 
+	private view returns(uint256)
 	{
 		uint256 steps = 100;
 		uint256 inc = saleInfo.tokenSellTarget / steps;
@@ -117,88 +118,88 @@ contract TrancheCrowdsale is CrowdsaleBase {
 }
 
 contract CappedTimedCrowdsale is CrowdsaleBase {
-	using SafeMath for uint256;
-	
 
-	modifier onlyWhileOpen {
-		// solium-disable-next-line security/no-block-members
-		require(block.timestamp >= saleInfo.openingTime && block.timestamp <= saleInfo.closingTime);
-		_;
-	}
-	function _preValidatePurchase(
+	function preValidatePurchase(
 		address _beneficiary,
 		uint256 _weiAmount
 	)
     internal view
-    onlyWhileOpen
 	{
+		require(isOpen());
 		require(_beneficiary != address(0));
 		require(_weiAmount != 0);
-		require(!goalReached());
 		require(!UnionCrowdsaleToken(token).paused());
 	}
 
-	function goalReached() 
-	public view returns (bool) 
+	function softGoalReached() 
+	public view returns(bool)
 	{
-		return saleInfo.weiRaised >= saleInfo.goal;
+		return saleInfo.weiRaised >= saleInfo.softGoal;
 	}
 
-	function softCapReached() 
-	public view returns (bool) 
+	function hardCapReached() 
+	public view returns(bool)
 	{
-		return saleInfo.weiRaised >= saleInfo.cap;
+		return (saleInfo.weiRaised >= saleInfo.hardCap);
 	}
 
-	function hasClosed() 
-	public view returns (bool) 
+	function isOpen() 
+	public view returns(bool)
 	{
 		// solium-disable-next-line security/no-block-members
-		return block.timestamp > saleInfo.closingTime;
+		uint256 ts = block.timestamp;
+		return (!saleInfo.isFinalized) && (ts >= saleInfo.openingTime) && (ts <= saleInfo.closingTime);
 	}
 
 }
 
 contract RefundableCrowdsale is CappedTimedCrowdsale {
-	using SafeMath for uint256;
-	
 	event Finalized();
-	
-	function finalization() 
-	internal 
+
+	function checkCap()
+	internal
 	{
-		if (goalReached()) {
-			vault.close();
-		} else {
-			UnionCrowdsaleToken(token).enableRefunds();
-			vault.enableRefunds();
+		if (hardCapReached()) {
+			finalization();
+		}
+		if (softGoalReached()) {
+			vault.softGoalReached();
 		}
 	}
-	function _forwardFunds() 
-	internal 
+	function finalization()
+	internal
+	{
+		if (!saleInfo.isFinalized) {
+			if (softGoalReached()) {
+				vault.softGoalReached();
+			} else {
+				UnionCrowdsaleToken(token).enableRefunds();
+				vault.enableRefunds();
+			}
+			emit Finalized();
+			saleInfo.isFinalized = true;
+		}
+	}
+	function forwardFunds()
+	internal
 	{
 		vault.deposit.value(msg.value)(msg.sender);	// ether transfer
 	}
 
 
 
-	function finalize() 
-	external 
-	onlyOwner  
+	function finalize()
+	external
+	onlyOwner
 	{
-
-		require(!saleInfo.isFinalized);
-		require(hasClosed());
 		finalization();
-		emit Finalized();
-		saleInfo.isFinalized = true;
 	}
-	
-	function claimRefund() 
-	external 
+
+	function claimRefund()
+	external
 	{
 		require(saleInfo.isFinalized);
-		require(!goalReached());
+		require(!softGoalReached());
 		vault.refund(msg.sender);
 	}
 
@@ -209,11 +210,11 @@ contract RefundableCrowdsale is CappedTimedCrowdsale {
 
 
 
-contract UnionCrowdsale is RefundableCrowdsale, TrancheCrowdsale 
+contract UnionCrowdsale is RefundableCrowdsale, TrancheCrowdsale
 {
 
-	function link(UnionCrowdsaleToken _token, RefundVault _vault) 
-	external fromOwnerOrMaster 
+	function link(UnionCrowdsaleToken _token, RefundVault _vault)
+	external fromOwnerOrMaster
 	{
 		token = _token;
 		vault = _vault;

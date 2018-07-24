@@ -14,3 +14,8 @@ contract ERC20 is ERC20Basic {
 	function approve(address spender, uint256 value) public returns(bool);
 	event Approval(address indexed owner, address indexed spender, uint256 value);
 }
+
+// https://eips.ethereum.org/EIPS/eip-1046
+contract ERC20Ex is ERC20 {
+	function tokenURI() external view returns (string);
+}
