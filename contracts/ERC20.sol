@@ -19,3 +19,4 @@ contract ERC20 is ERC20Basic {
 contract ERC20Ex is ERC20 {
 	function tokenURI() external view returns (string);
 }
+

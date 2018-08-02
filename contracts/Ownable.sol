@@ -35,62 +35,30 @@ contract Ownable {
 
 
 contract OwnableEx is Ownable {
-	address master;
+	address master;	// we use it for smart contract owner
 
 	modifier onlyMaster() {
 		require(msg.sender==address(master));
 		_;
 	}
-	modifier fromOwnerOrMaster() {
-		require(msg.sender==owner||msg.sender==address(master));
-		_;
-	}
-
 }
 
-
-contract Pausable is OwnableEx {
-	event Pause();
-	event Unpause();
-
-	bool public paused = false;
-
-	modifier whenNotPaused() {
-		require(!paused);
-		_;
-	}
-
-	modifier whenPaused() {
-		require(paused);
-		_;
-	}
-
-	function pause() fromOwnerOrMaster whenNotPaused public {
-		paused = true;
-		emit Pause();
-	}
-
-	function unpause() fromOwnerOrMaster whenPaused public {
-		paused = false;
-		emit Unpause();
-	}
-}
 
 
 contract Recoverable is OwnableEx {
 
 	function recoverTokens(ERC20Basic token) public onlyOwner  {
-		token.transfer(owner, tokensToBeReturned(token));
+		token.transfer(owner, token.balanceOf(this));
 	}
-	function tokensToBeReturned(ERC20Basic token) internal view returns(uint256) {
-		return token.balanceOf(this);
-	}
+	// function tokensToBeReturned(ERC20Basic token) private view returns(uint256) {
+	// 	return token.balanceOf(this);
+	// }
 	function recoverWeis() public onlyOwner  { // ether
-		owner.transfer(weisToBeReturned());
+		owner.transfer(address(this).balance);
 	}
-	function weisToBeReturned() internal view returns(uint256) { // ether
-		return address(this).balance;
-	}
+	// function weisToBeReturned() private view returns(uint256) { // ether
+	// 	return address(this).balance;
+	// }
 }
 
 

@@ -7,265 +7,216 @@ import "./StandardToken.sol";
 import "./Ownable.sol";
 
 
-contract RefundVault is Recoverable { // token is ether
-	using SafeMath for uint256;
-
-	Util.Balance account;
-	
-	Util.RefundInfo public refundInfo;
-
-
-	modifier onlySale() {
-		require(msg.sender == address(refundInfo.sale));
-		_;
+library VaultOp
+{
+	function transferERC20From(ERC20 token, address from, address to, uint256 amount) 
+	internal  
+	{
+		token.transferFrom(from, to, amount);
 	}
 
-	event SoftGoalReached();
-	event RefundsEnabled();
-	event Refunded(address indexed beneficiary, uint256 weiAmount);
 
-	constructor(address _owner, address _master, address _sale, address _wallet)
+	function transferERC20Basic(ERC20Basic token, address to, uint256 amount) 
+	internal  
+	{
+		token.transfer(to, amount);
+	}
+
+
+	function transferWei(address to, uint256 weis) 
+	internal  
+	{ // ether
+		to.transfer(weis);
+	}
+
+}
+
+library RecoverVaultOp
+{
+	using SafeMath for uint256; 
+
+	function recoverVaultTokens(TokenVault holder, ERC20Basic token, address to, uint256 keep)
+	internal 
+	{
+		uint256 amount = token.balanceOf(holder).sub(keep);
+		holder.transferERC20Basic(token, to, amount);
+	}
+
+	function recoverVaultWeis(TokenVault holder, address to, uint256 keep)
+	internal 
+	{ // ether
+		uint256 weis = address(holder).balance.sub(keep);
+		holder.transferWei(to, weis);
+	}
+
+}
+
+
+contract TokenVault
+{
+	address transferAgent;
+	constructor(address _transferAgent)
 	public
 	{
-		require(_wallet != address(0));
-		owner = _owner;
-		master = _master;
-		refundInfo.sale = _sale;
-		refundInfo.wallet = _wallet;
-		refundInfo.state = Util.RefundState.Active;
+		transferAgent = _transferAgent;
 	}
 
-	function deposit(address investor)  
-	public payable
-	onlySale
-	{
-		require(refundInfo.state == Util.RefundState.Active);
 
-		Util.mint(account, investor, msg.value);
-	}
-	function enableRefunds()  
-	external onlySale
-	{
-		if(refundInfo.state == Util.RefundState.Active){
-			refundInfo.state = Util.RefundState.Refunding;
-			emit RefundsEnabled();
-		}
-	}
-	function softGoalReached() 
-	external onlySale 
-	{
-		if(refundInfo.state == Util.RefundState.Active){
-			refundInfo.state = Util.RefundState.SoftGoalReached;
-			emit SoftGoalReached();
-		}
-	}
-	function beneficiaryWithdraw()  
-	external fromOwnerOrMaster
-	{
-		require(refundInfo.state == Util.RefundState.SoftGoalReached);
-		uint256 r = remains();
-		refundInfo.wallet.transfer(r);
-		refundInfo.cashed = refundInfo.cashed.add(r);
-	}
-	function refund(address investor)
-	external
-	{
-		require(refundInfo.state == Util.RefundState.Refunding);
-		
-		uint256 amount = Util.balanceOf(account, investor);
-		Util.burn(account, investor, amount);
-
-		investor.transfer(amount); 	// ether 
-		emit Refunded(investor, amount);
-	}
-
-	function remains() public view returns(uint256) { // ether
-		return Util.totalSupply(account).sub(refundInfo.cashed);
-	}
-	function weisToBeReturned() internal view returns(uint256) { // ether
-		return address(this).balance.sub(remains());
-	}
-}
-
-contract TokenVault is Recoverable {
-	using SafeMath for uint256;
-
-	Util.Balance account;
-	ERC20Basic token;
-	Util.AddressInt freezeEnds;
-
-	modifier fromToken() {
-		require(msg.sender == address(token));
+	modifier fromTransferAgent() {
+		require(msg.sender == transferAgent);
 		_;
 	}
-
-	function tokensToBeReturned(ERC20Basic tokenToClaim)
-	internal view returns(uint256)
+	function transferERC20Basic(ERC20Basic token, address to, uint256 amount) 
+	public fromTransferAgent
 	{
-		if (address(tokenToClaim) == address(token)) {
-			return token.balanceOf(address(this)).sub(Util.totalSupply(account));
-		} else {
-			return tokenToClaim.balanceOf(this);
+		VaultOp.transferERC20Basic(token, to, amount);
+	}
+	function transferWei(address to, uint256 weis) 
+	public fromTransferAgent
+	{ // ether
+		VaultOp.transferWei(to, weis);
+	}
+
+	function() public payable {}
+
+	// mapping(uint256 => uint256) dic; /* key is opId, value is index for ls[index] */
+
+	// using Uint256List for Uint256List.t;
+	// Uint256List.t all;
+
+	// function test() public {
+
+	// 	// all.add(3);
+	// 	// dic[8]=8;
+
+	// 	uint256 len = 93;
+	// 	SortUtil.SimpleEntry[] memory ll=new SortUtil.SimpleEntry[](len);
+	// 	for(uint256 i = 0; i<len; i++){
+	// 	SortUtil.SimpleEntry memory a = SortUtil.SimpleEntry(i,i);
+	// 	ll[i]=a;
+	// 	}
+	// 	// SortUtil.quickSort(ll,0,len-1,true);
+	// 	// SortUtil.quickSort(ll,0,len-1,false);
+	// 	SortUtil.quickSort(ll,0,len-1,true);
+	// 	SortUtil.quickSort(ll,0,len-1,false);
+	// 	SortUtil.quickSort(ll,0,len-1,true);
+	// 	require(ll[3].key==len-1-3);
+	// 	SortUtil.quickSort(ll,0,len-1,false);
+	// 	require(ll[3].key==3);
+	// }
+
+	// 	// Uint256List.t all;
+
+	// 	// AddressKeyUint256List.t userDic;
+}
+
+
+
+
+library FreezeVaultOp {
+	using SafeMath for uint256; 
+	using BalanceOp for BalanceOp.t; 
+
+	event Transfer(address indexed from, address indexed to, uint256 value);
+	event Approval(address indexed owner, address indexed spender, uint256 value);
+
+	event Mint(address indexed to, uint256 amount);
+	event Burn(address indexed to, uint256 value);
+
+	struct AddressInt {
+		mapping(address => uint256) dic;
+	}
+	struct AddressAddressInt {
+		mapping(address => mapping(address => uint256)) allowed;//dic2
+	}
+
+
+	struct t {
+		BalanceOp.t account;
+		AddressInt freezeEnds;
+		TokenVault holder;
+		ERC20Basic token;
+	}
+
+
+
+	// solium-disable-next-line indentation
+	// function xlock(BalanceOp.t storage d, 
+	// 	TokenTypeLib.AddressInt storage freezeEnds, 
+	// 	address _who, uint256 amount, uint256 unlockedAt) 
+	// internal 
+	// {
+	// 	if(amount>0){
+	// 		d.mint(_who, amount);
+	// 		freezeEnds.dic[_who] = unlockedAt;
+	// 	}
+	// }
+
+
+	// solium-disable-next-line indentation
+	function lock(FreezeVaultOp.t storage _this, 
+		address to, uint256 amount, uint256 unlockedAt) 
+	internal 
+	{
+		// require(msg.sender == to);
+		_this.account.mint(to, amount);
+		_this.freezeEnds.dic[to] = unlockedAt;
+		// VaultOp.transferERC20Basic(_this.token, _this.holder, amount);
+	}
+
+
+// needed for upgrade
+	function forceUnlock(FreezeVaultOp.t storage _this, address _to) 
+	internal 
+	{
+		uint256 _amount = _this.account.balanceOf(_to);
+		if (_amount > 0) {
+			_this.account.burn(_to, _amount);
+			_this.holder.transferERC20Basic(_this.token, _to, _amount);
 		}
 	}
 
-}
-
-contract IFoundersTokenVault {
-	function lock(address _to, uint256 _amount, uint256 _unlockedAt) public;
-	function unlock(address _to) public;
-}
-
-contract IVotableTokenVault {
-
-	// solium-disable-next-line indentation
-	function startProposal(address initiator, string title, string url, 
-		uint256 more_amount, uint256 endDate, uint256 totalTokens) external returns(uint256 ProposalID);
-	function voteProposal(address votor, uint256 id, uint256 more_amount, uint256 endDate) external;
-	function unlockVotableToken(address _to) external;
-}
-
-
-
-
-contract FoundersTokenVault is IFoundersTokenVault, TokenVault {
-	using SafeMath for uint256;
-
-	Util.Balance burnt; 
-
-
-	constructor(address _owner, address _master, ERC20Basic _token) public {
-		owner = _owner;
-		master = _master;
-		token = _token;
-
-		require(address(token) != address(0x0));
-	}
-
-	modifier fromToken() {
-		require(msg.sender == address(token));
-		_;
-	}
-	function lock(address _to, uint256 _amount, uint256 _unlockedAt)
-	public 
-	fromToken
+	function unlock(FreezeVaultOp.t storage _this, address _to) 
+	internal 
 	{
-		Util.lock(account, freezeEnds, _to, _amount, _unlockedAt);
-	}
-
-
-
-	function unlock(address _to) public {
-		Util.unlockToken(account, freezeEnds, _to, token);
-	}
-
-
-
-
-	function burnMint(address user)
-	public 
-	fromToken
-	{
-		uint256 amount = Util.balanceOf(account, user);
-		if (amount > 0) {
-			Util.burn(account, user, amount);
-			Util.mint(burnt, user, amount);
-		}
-	}
-
-	function freezeInfo(address _user)
-	public
-	view
-	returns(uint256 amount, uint256 until)
-	{
-		return (	
-			Util.balanceOf(account, _user),			
-			freezeEnds.dic[_user] 
-		);
-	}
-
-
-}
-
-
-
-
-contract VotableTokenVault is TokenVault, IVotableTokenVault {
-
-	Util.VotableInfo public votableInfo;
-
-	mapping(uint256 => Util.Proposal) public proposals;
-
-
-	constructor(address _owner, address _master, ERC20Basic _token) public {
-		owner = _owner;
-		master = _master;
-		token = _token;
-
-		votableInfo.numProposals = 0;
-		// votableInfo.minProposal = 1;
-		// votableInfo.passGoal = 5;
-	}
-
-	// solium-disable-next-line indentation
-	function startProposal(address initiator, string title, string url, uint256 more_amount,
-		uint256 endDate, uint256 totalTokens)
-	external
-	fromToken
-	returns(uint256 ProposalID)
-	{
-		uint256 minProposal = totalTokens * 1 / 100;
-		uint256 passGoal = totalTokens * 5 / 100;
-		Util.lock(account, freezeEnds, initiator, more_amount, endDate);
-		uint256 amount = Util.balanceOf(account, initiator);
-		require(amount >= minProposal);
-		uint256 id = votableInfo.numProposals++;
-		proposals[id] = Util.Proposal(id, minProposal, passGoal,
-			initiator, title, url, endDate, amount);
-		proposals[id].votes[initiator] = amount;
-		return id;
-	}
-
-
-
-	function voteProposal(address votor, uint256 id, uint256 more_amount, uint256 endDate)
-	external
-	fromToken
-	{
-		require(id < votableInfo.numProposals);
-		Util.Proposal storage p = proposals[id];
-
+		uint256 unlockedAt = _this.freezeEnds.dic[_to]; 
 	// solium-disable-next-line security/no-block-members
-		require(now < p.endDate);
-
-		Util.lock(account, freezeEnds, votor, more_amount, endDate);
-		uint256 amount = Util.balanceOf(account, votor);
-		uint256 v = p.votes[votor];
-		if (v < amount) {
-			uint256 c = amount - v;
-			p.votes[votor] = amount;
-			p.total += c;
+		if (now >= unlockedAt) { 
+			forceUnlock(_this, _to);
 		}
 	}
 
-	function unlockVotableToken(address _to)
-	external
-	{
-		Util.unlockToken(account, freezeEnds, _to, token);
-	}
 
-	function forceUnlockVotableToken(address _to)
-	external
-	fromToken
-	{
-		Util.forceUnlockToken(account, _to, token);
-	}
 
-	function totalSupply() public view returns(uint256) {
-		return Util.totalSupply(account);
-	}
-	function balanceOf(address _owner) public view returns(uint256) {
-		return Util.balanceOf(account, _owner);
-	}
+
+
+	// function xunlockToken(
+	// 	BalanceOp.t storage d,
+	// 	TokenTypeLib.AddressInt storage freezeEnds, 
+	// 	address _to,
+	// 	ERC20Basic token) 
+	// internal 
+	// {
+	// 	uint256 unlockedAt = freezeEnds.dic[_to]; 
+	// // solium-disable-next-line security/no-block-members
+	// 	if (now >= unlockedAt) { 
+	// 		xforceUnlockToken(d, _to, token);
+	// 	}
+	// }
+
+	// function xforceUnlockToken(
+	// 	BalanceOp.t storage d,
+	// 	address _to,
+	// 	ERC20Basic token) 
+	// internal 
+	// {
+	// 	uint256 _amount = d.balanceOf(_to);
+	// 	if (_amount > 0) {
+	// 		d.burn(_to, _amount);
+	// 		token.transfer(_to, _amount);
+	// 	}
+	// }
+
+
+
 }
-

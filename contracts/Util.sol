@@ -30,184 +30,151 @@ library SafeMath {
 }
 
 
-library Util {
+
+
+library MiscOp {
+	function currentTime() 
+	internal view returns(uint256)
+	{
+		// solium-disable-next-line security/no-block-members
+		return block.timestamp;
+		// return now;
+	}
+}
+
+
+
+
+library SortUtil {
+
+	struct SimpleEntry {
+		uint256 key;
+		uint256 value;
+	}
+	// https://ethereum.stackexchange.com/questions/1517/sorting-an-array-of-integer-with-ethereum
+	function quickSort(SimpleEntry[] memory arr, uint256 left, uint256 right, bool desc) internal {
+		uint256 i = left;
+		uint256 j = right;
+		SimpleEntry memory tmp;
+		SimpleEntry memory pivot = arr[(left + right) / 2];
+		while (i <= j) {
+			if (desc) {
+				while (arr[i].key > pivot.key)
+					i++;
+				while (arr[j].key < pivot.key)
+					j--;
+			} else {
+				while (arr[i].key < pivot.key)
+					i++;
+				while (arr[j].key > pivot.key)
+					j--;
+			}
+			if (i <= j) {
+				tmp = arr[i];
+				arr[i] = arr[j];
+				arr[j] = tmp;
+				i++;
+				j--;
+			}
+		}
+		if (left < j)
+			quickSort(arr, left, j, desc);
+		if (i < right)
+			quickSort(arr, i, right, desc);
+	}
+
+}
+
+
+// https://github.com/aragon/zeppelin-solidity/blob/master/contracts/token/StandardToken.sol
+
+library BalanceOp {
 	using SafeMath for uint256; 
+
+	struct t {
+		mapping(address => uint256) balances;
+		uint256 total;
+	}
 
 	event Transfer(address indexed from, address indexed to, uint256 value);
 	event Approval(address indexed owner, address indexed spender, uint256 value);
 
-	event Mint(address indexed to, uint256 amount);
-	event Burn(address indexed to, uint256 value);
 
-	struct Balance {
-		mapping(address => uint256) dic;
-		uint256 total;
-	}
-	struct AddressInt {
-		mapping(address => uint256) dic;
-	}
-	struct AddressAddressInt {
-		mapping(address => mapping(address => uint256)) allowed;//dic2
+	function totalSupply(t storage _this) 
+	internal view returns(uint) {
+		return _this.total;
 	}
 
-	enum RefundState { Active, Refunding, SoftGoalReached } 
-	struct RefundInfo {
-		uint256 cashed; 
-		address wallet;
-		RefundState state;
-		address sale;
-	} 
-	struct SaleInfo {
-		
-		uint256 initialAllocatedSupply;
-
-		uint256 weiRaised;
-
-		uint256 weiPerUSCent;
-
-		uint256 multiplier;
-		uint256 tokenSellTarget;
-
-		uint256 openingTime;
-		uint256 closingTime;
-
-		uint256 hardCap;
-
-		uint256 softGoal;
-
-		bool isFinalized;
-
-	}
-
-	struct VotableInfo {
-		uint256 numProposals;
-	}
-
-	struct Proposal {
-		uint256 id; // zero based
-
-		uint256 minProposal; // init
-		uint256 passGoal; // pass
-
-		address initiator;
-		string title;
-		string url;
-		uint256 endDate;
-		uint256 total;
-		mapping(address => uint256) votes;
-	}
-
-	struct TokenInfo {
-		
-		address sale;
-		uint256 voteLockSeconds;
-
-
-		address releaseAgent;
-		bool released;
-		bool refunded;
-		bool inUpgrading;
-		bool outUpgrading;
-
-
-		address inToken;
-		address outToken;
-
-	}
-
-
-	function totalSupply(Balance storage d) 
-	internal view returns (uint256) 
+	function mint(t storage _this, address _to, uint256 _value) 
+	internal returns(bool success) 
 	{
-		return d.total;
+		_this.total = _this.total.add(_value);
+		_this.balances[_to] = _this.balances[_to].add(_value);
+		emit Transfer(0x0, _to, _value);
+		return true;
 	}
 
-	function balanceOf(Balance storage d, address _owner) 
-	internal view returns(uint256) 
+	function burn(t storage _this, address _to, uint256 _value) 
+	internal returns(bool success) 
 	{
-		return d.dic[_owner];
+		_this.total = _this.total.sub(_value);
+		_this.balances[_to] = _this.balances[_to].sub(_value);
+		emit Transfer(_to, 0x0, _value);
+		return true;
 	}
 
-
-	function transfer(Balance storage d, address _from, address _to, uint256 _value) 
-	internal returns(bool) 
+	function transfer(t storage _this, address _from, address _to, uint256 _value) 
+	internal returns(bool success) 
 	{
-		require(_to != address(0));
-		require(_value <= d.dic[_from]);
-		d.dic[_from] = d.dic[_from].sub(_value);
-		d.dic[_to] = d.dic[_to].add(_value);
-
+		_this.balances[_from] = _this.balances[_from].sub(_value);
+		_this.balances[_to] = _this.balances[_to].add(_value);
 		emit Transfer(_from, _to, _value);
 		return true;
 	}
 
-	function mint(
-		Balance storage d,
-		address _to,
-		uint256 _amount
-	)
-	internal
-	returns(bool)
+	function balanceOf(t storage _this, address _owner) 
+	internal view returns(uint256 balance) 
 	{
-		d.total = d.total.add(_amount);
-		d.dic[_to] = d.dic[_to].add(_amount);
-		emit Mint(_to, _amount);
-		emit Transfer(address(0), _to, _amount);
+		return _this.balances[_owner];
+	}
+
+}
+
+library BalanceExOp {
+	using SafeMath for uint256; 
+	using BalanceOp for BalanceOp.t; 
+
+	struct t {
+		BalanceOp.t basic;
+		mapping(address => mapping(address => uint256)) allowed;
+	}
+
+	event Transfer(address indexed from, address indexed to, uint256 value);
+	event Approval(address indexed owner, address indexed spender, uint256 value);
+
+
+	function transferFrom(t storage _this, address _sender, address _from, address _to, uint256 _value) 
+	internal returns(bool success) 
+	{
+		uint256 _allowance = _this.allowed[_from][_sender];
+		_this.allowed[_from][_sender] = _allowance.sub(_value);
+		_this.basic.transfer(_from, _to, _value);
 		return true;
 	}
 
-
-	function burn(Balance storage d, address _who, uint256 _value) 
-	internal 
+	function approve(t storage _this, address _sender, address _spender, uint256 _value) 
+	internal returns(bool success) 
 	{
-		require(_value <= d.dic[_who]);
-		d.dic[_who] = d.dic[_who].sub(_value);
-		d.total = d.total.sub(_value);
-		emit Burn(_who, _value);
-		emit Transfer(_who, address(0), _value);
+		_this.allowed[_sender][_spender] = _value;
+		emit Approval(_sender, _spender, _value);
+		return true;
 	}
 
-
-
-	// solium-disable-next-line indentation
-	function lock(Balance storage d, 
-		AddressInt storage freezeEnds, 
-		address _who, uint256 amount, uint256 unlockedAt) 
-	internal 
-	{
-		if(amount>0){
-			mint(d, _who, amount);
-			freezeEnds.dic[_who] = unlockedAt;
-		}
+	function allowance(t storage _this, address _owner, address _spender) 
+	internal view returns(uint256 remaining) {
+		return _this.allowed[_owner][_spender];
 	}
-
-	function unlockToken(
-		Balance storage d,
-		AddressInt storage freezeEnds, 
-		address _to,
-		ERC20Basic token) 
-	internal 
-	{
-		uint256 unlockedAt = freezeEnds.dic[_to]; 
-	// solium-disable-next-line security/no-block-members
-		if (now >= unlockedAt) { 
-			forceUnlockToken(d, _to, token);
-		}
-	}
-
-	function forceUnlockToken(
-		Balance storage d,
-		address _to,
-		ERC20Basic token) 
-	internal 
-	{
-		uint256 _amount = balanceOf(d, _to);
-		if (_amount > 0) {
-			burn(d, _to, _amount);
-			token.transfer(_to, _amount);
-		}
-	}
-
-
 }
+
+
 
