@@ -1,9 +1,9 @@
 
-pragma solidity ^ 0.4.23;
+pragma solidity ^ 0.4.24;
 
 import "./ERC20.sol";
 import "./Util.sol";
-import "./StandardToken.sol";
+import "./ERC20Token.sol";
 import "./Ownable.sol";
 import "./Vault.sol";
 import "./CrowdsaleToken.sol";
@@ -11,9 +11,11 @@ import "./CrowdsaleToken.sol";
 
 
 
-contract Crowdsale is Recoverable
+contract Crowdsale is 
+Recoverable
 {
 	using SafeMath for uint256;
+	using FreezeBalanceOp for FreezeBalanceOp.t;
 	using CrowdsaleHelper for CrowdsaleHelper.t;
 
 
@@ -47,9 +49,9 @@ contract Crowdsale is Recoverable
 	{
 		address user = msg.sender;
 		uint256 weis = msg.value;
-		require(isOpen());
-		require(user != address(0));
-		require(weis != 0);
+		MiscOp.requireEx(isOpen());
+		MiscOp.requireEx(user != address(0));
+		MiscOp.requireEx(weis != 0);
 		saleInfo.buyTokens(user, weis);
 	}
 
@@ -57,7 +59,7 @@ contract Crowdsale is Recoverable
 	function beneficiaryWithdraw()
 	external onlyOwner
 	{
-		require(saleInfo.state == CrowdsaleHelper.SaleState.SoftCapReached);
+		MiscOp.requireEx(saleInfo.state == CrowdsaleHelper.SaleState.SoftCapReached);
 		saleInfo.beneficiaryWithdraw();
 	}
 
@@ -80,7 +82,7 @@ contract Crowdsale is Recoverable
 	function claimRefund()
 	external
 	{
-		require(saleInfo.state == CrowdsaleHelper.SaleState.ClosedRefunding);
+		MiscOp.requireEx(saleInfo.state == CrowdsaleHelper.SaleState.ClosedRefunding);
 		return saleInfo.claimRefund(msg.sender);
 	}
 
@@ -110,15 +112,68 @@ contract Crowdsale is Recoverable
 		return saleInfo.hardCapReached();
 	}
 
-	function link(CrowdsaleToken _token, TokenVault _refundVault)
+	function link(CrowdsaleToken _token, address _foundersVault, uint256 initialAmount, TokenVault _refundVault)
 	external onlyMaster
 	{
 		saleInfo.link(_token, _refundVault);
-		require(saleInfo.token != address(0));
-		require(saleInfo.refundVault != address(0));
+		saleInfo.founders_account.holder = TokenVault(_foundersVault);
+		saleInfo.founders_account.token = _token;
+
+		CrowdsaleToken(saleInfo.token).deliverTokens(saleInfo.founders_account.holder, initialAmount);
+
+
+		MiscOp.requireEx(saleInfo.token != address(0));
+		MiscOp.requireEx(saleInfo.refundVault != address(0));
+		MiscOp.requireEx(saleInfo.founders_account.holder != address(0));
+		MiscOp.requireEx(saleInfo.founders_account.token != address(0)); 
+	}
+	function link2(address _tokenPrevious)
+	external onlyMaster
+	{
+		if(address(_tokenPrevious) != 0x0) {
+			saleInfo.upgrade_in_burnt_account.token = ERC20(_tokenPrevious);
+			saleInfo.upgrade_in_burnt_account.holder = new TokenVault(this);
+
+			saleInfo.upgrade_account.token = ERC20(saleInfo.token);
+			saleInfo.upgrade_account.holder = new TokenVault(this);
+
+			uint256 _amount = ERC20(_tokenPrevious).totalSupply();
+			CrowdsaleToken(saleInfo.token).deliverTokens(
+				saleInfo.upgrade_account.holder, _amount);
+		}
+	}
+
+	function initFoundersTokens(
+		address user, uint256 amount, uint256 _unlockedAt)
+	external onlyMaster
+	{
+		saleInfo.founders_account.lock(user, amount, _unlockedAt);
+	}
+
+	function unlockFoundersToken(address _to)
+	external
+	{
+		saleInfo.unlockFoundersToken(_to);
+	} 
+
+	function upgrade()
+	external 
+	{
+		address user = msg.sender;
+		uint256 amount = saleInfo.upgrade_in_burnt_account.token.balanceOf(user);
+		upgradeUser(user, amount);
+
 	}
 
 
+	function upgradeUser(address user, uint256 amount)
+	internal
+	{
+		saleInfo.upgrade_in_burnt_account.token.transferFrom(user, 
+			saleInfo.upgrade_in_burnt_account.holder, amount);
+		saleInfo.upgrade_account.holder.transferERC20Basic(
+			saleInfo.upgrade_account.token, user, amount); // upgrade rate is 1:1
+	}
 
 	function recoverTokens(ERC20Basic token) public onlyOwner  {
 		super.recoverTokens(token);
@@ -138,9 +193,11 @@ contract Crowdsale is Recoverable
 library CrowdsaleHelper
 {
 
-	using SafeMath for uint256;
+	using SafeMath for uint256; 
+	using FreezeBalanceOp for FreezeBalanceOp.t;
 	using BalanceOp for BalanceOp.t;
-
+	
+	
 
 	enum SaleState { Active, ClosedRefunding, SoftCapReached, ClosedSuccess }
 
@@ -171,6 +228,10 @@ library CrowdsaleHelper
 		TokenVault refundVault;
 		BalanceOp.t refund_account;
 
+		FreezeBalanceOp.t founders_account;
+		VaultBalanceOp.t upgrade_in_burnt_account;
+		VaultBalanceOp.t upgrade_account;
+ 
 		uint256 multiplier;
 
 		ERC20 token;
@@ -206,7 +267,7 @@ library CrowdsaleHelper
 	function beneficiaryWithdraw(t storage _this)
 	internal
 	{
-		require(_this.state == SaleState.SoftCapReached);
+		MiscOp.requireEx(_this.state == SaleState.SoftCapReached);
 		uint256 amount = weiBalance(_this);
 		if (amount > 0) {
 			_this.refundVault.transferWei(_this.fundWallet, amount);
@@ -234,7 +295,7 @@ library CrowdsaleHelper
 	function claimRefund(t storage _this, address investor)
 	internal
 	{
-		require(_this.state == SaleState.ClosedRefunding);
+		MiscOp.requireEx(_this.state == SaleState.ClosedRefunding);
 
 		uint256 amount = _this.refund_account.balanceOf(investor);
 		if (amount > 0) {
@@ -281,8 +342,8 @@ library CrowdsaleHelper
 	{
 		_this.token = _token;
 		_this.refundVault = _refundVault;
-		require(_this.token != address(0));
-		require(_this.refundVault != address(0));
+		MiscOp.requireEx(_this.token != address(0));
+		MiscOp.requireEx(_this.refundVault != address(0));
 	}
 
 
@@ -369,7 +430,7 @@ library CrowdsaleHelper
 	function depositVault(t storage _this, address investor, uint256 weis)
 	private
 	{
-		require(_this.state == SaleState.Active);
+		MiscOp.requireEx(_this.state == SaleState.Active);
 		_this.refund_account.mint(investor, weis);
 	}
 
@@ -382,7 +443,7 @@ library CrowdsaleHelper
 
 		uint256 price = getTokenPriceInWei(_this, tokensSold);
 		uint256 amount = weis / price;
-		require(amount > 0);
+		MiscOp.requireEx(amount > 0);
 		return amount;
 	}
 
@@ -410,6 +471,18 @@ library CrowdsaleHelper
 		return _this.refund_account.totalSupply().sub(_this.fundWithdrawal);
 	}
 
+
+	//////////////////////////////////////////////////////////////////
+
+
+	function unlockFoundersToken(t storage _this, address _to)
+	internal
+	{
+		_this.founders_account.unlock(_to);
+	} 
+
+
+	//////////////////////////////////////////////////////////////////
 
 
 }

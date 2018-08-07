@@ -1,18 +1,18 @@
 
-pragma solidity ^ 0.4.23;
+pragma solidity ^ 0.4.24;
 
 import "./ERC20.sol";
 import "./Util.sol";
-import "./StandardToken.sol";
+import "./ERC20Token.sol";
 import "./Ownable.sol";
 import "./Vault.sol";
 
 
 
-contract CrowdsaleToken is
-StandardToken, Recoverable
+contract CrowdsaleToken is 
+ERC20Ex, StandardToken, Recoverable
 {
-	using FreezeVaultOp for FreezeVaultOp.t;
+	using FreezeBalanceOp for FreezeBalanceOp.t;
 	using CrowdsaleTokenHelper for CrowdsaleTokenHelper.t;
 	
 
@@ -31,19 +31,12 @@ StandardToken, Recoverable
 
 
 	// solium-disable-next-line indentation
-	function link(address _sale, TokenVault _voteVault,
-		TokenVault _foundersVault)
+	function link(address _sale)
 	external onlyMaster
 	{ 
-		tokenInfo.link(_sale, _voteVault, _foundersVault, this, owner); 
+		tokenInfo.link(_sale, owner); 
 	}
- 
-	function initFoundersTokens(
-		address user, uint256 _amount, uint256 _unlockedAt)
-	external onlyMaster
-	{
-		mintForFounders(user, _amount, _unlockedAt);
-	}
+  
 
 	function deliverTokens(
 		address _beneficiary,
@@ -52,7 +45,7 @@ StandardToken, Recoverable
 	external
 	onlySale
 	{
-		require(tokenInfo.sale != 0);
+		MiscOp.requireEx(tokenInfo.sale != 0);
 		mint(_beneficiary, _tokenAmount);
 	}
  
@@ -150,217 +143,48 @@ StandardToken, Recoverable
 		return tokenInfo.tokenURI;
 	}
 	
- 
-
- 
-
-	function unlockfoundersToken(address _to)
-	public
-	{
-		tokenInfo.unlockfoundersToken(_to);
-	} 
-
-
-
-	function startProposal(string title, string _url)
-	public
-	returns(uint256 ProposalID)
-	{
-		address sender = msg.sender;
-		uint256 amount = lockBalanceTo(tokenInfo.vote_account.holder);
-		uint256 total = totalSupply();
-		return tokenInfo.startProposal(sender, title, _url, amount, MiscOp.currentTime().add(tokenInfo.voteLockSeconds), total);
-	}
-
-	function voteProposal(uint256 id)
-	public
-	{
-		address sender = msg.sender;
-		uint256 amount = lockBalanceTo(tokenInfo.vote_account.holder);
-		tokenInfo.voteProposal(sender, id, amount, MiscOp.currentTime().add(tokenInfo.voteLockSeconds));
-	}
-	function unlockVotableToken()
-	public
-	{
-		tokenInfo.unlockVotableToken();
-	}
-
-
-
-	function voteTotalSupply() public view returns(uint256) {
-		return tokenInfo.voteTotalSupply(); 
-	}
-	function voteBalanceOf(address _owner) public view returns(uint256) {
-		return tokenInfo.voteBalanceOf(_owner); 
-	}
-
-//////////////////////////////////////////////////////////////////////////////
-
+  
 	modifier onlySale() {
-		require(msg.sender == address(tokenInfo.sale));
+		MiscOp.requireEx(msg.sender == address(tokenInfo.sale));
 		_;
 	}
 
 	modifier onlyReleaseAgent() {
-		require(msg.sender == address(tokenInfo.releaseAgent));
+		MiscOp.requireEx(msg.sender == address(tokenInfo.releaseAgent));
 		_;
 	}
  
 	modifier canTransfer() {
 		address sender = msg.sender;
-		require(!tokenInfo.refunded && (tokenInfo.released || tokenInfo.transferAgents[sender]));
+		MiscOp.requireEx(!tokenInfo.refunded && (tokenInfo.released || tokenInfo.transferAgents[sender]));
 		_;
 	}
 	modifier inReleaseState(bool releaseState) {
-		if (releaseState != tokenInfo.released) {
-			revert();
-		}
+		MiscOp.requireEx(releaseState != tokenInfo.released);
 		_;
 	}
 //////////////////////////////////////////////////////////////////////////////
 
+   
+	// function recoverTokens(ERC20Basic token) public onlyOwner { // override
+	// 	super.recoverTokens(token);
+	// 	// uint256 keep = tokenInfo.founders_account.account.totalSupply();
+	// 	// RecoverVaultOp.recoverVaultTokens(tokenInfo.founders_account.holder, token, owner, keep);
+	// }
 
-
-	modifier inUpgradable() {
-		require(tokenInfo.inUpgrading);
-		require(tokenInfo.inToken != 0);
-		require(tokenInfo.inToken == msg.sender);
-		_;
-	}
-	modifier outUpgradable() {
-		require(tokenInfo.outUpgrading);
-		require(tokenInfo.outToken != 0);
-		_;
-	}
-	function setInToken(address _inToken)
-	external onlyOwner  {
-		tokenInfo.inToken = _inToken;
-	}
-	function setOutToken(address _outToken)
-	external onlyOwner  {
-		tokenInfo.outToken = _outToken;
-	}
-
-	function enableInUpgrading()
-	external onlyOwner  {
-		require(tokenInfo.inToken != 0);
-		tokenInfo.inUpgrading = true;
-	}
-
-	function enableOutUpgrading()
-	external onlyOwner  {
-		require(tokenInfo.outToken != 0);
-		tokenInfo.outUpgrading = true;
-	}
-
-
-	function burntTotalSupply() public view returns(uint256) {
-		return tokenInfo.upgrade_burnt.totalSupply();
-	}
-	function burntBalanceOf(address _owner) public view returns(uint256) {
-		return tokenInfo.upgrade_burnt.balanceOf(_owner);
-	}
-
-////////////////////////////////////////////////////////////////////////////////
-
-	function upgrade()
-	external
-	outUpgradable
-	{
-		upgradeUser(msg.sender);
-
-	}
-
-
-
-	// https://steemit.com/ethereum/@johannlilly/executing-functions-on-other-contracts-with-multisig-wallets-or-multisig-functions-on-ethereum
-	// multi-sig can't call other contract function easily?
-	// normal account can call other contract.
-	function upgradeUser(address user)
-	public
-	outUpgradable
-	{
-		tokenInfo.vote_account.forceUnlock(user);
-		uint256 amount0 = balanceOf(user); // balance here
-		burn(user, amount0);
-		tokenInfo.informReceiver(user, user, amount0, 0, 0);
-
-		uint256 amount1 = tokenInfo.founders_account.account.balanceOf(user);		
-		uint256 until1 = tokenInfo.founders_account.freezeEnds.dic[user];
-		burn(tokenInfo.founders_account.holder, amount1);
-		tokenInfo.informReceiver(tokenInfo.founders_account.holder, user, amount1, until1, 1);
-		tokenInfo.destroyfoundersAccount(user);
-	}
-
-
-
-
-	function receiveUpgrade(address to, uint256 amount, uint256 lockEndAt, uint256 vaultType)
-	external
-	inUpgradable
-	{
-		if (vaultType == 1) {
-			mintForFounders(to, amount, lockEndAt);
-		} else {
-			mint(to, amount);
-		}
-		emit ReceiveUpgrade(msg.sender, to, amount, lockEndAt, vaultType);
-	}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-	function lockBalanceTo(TokenVault holder)
-	private
-	returns(uint256)
-	{
-		address sender = msg.sender;
-		require(address(holder) != address(0x0));
-		uint256 amount = balanceOf(sender);
-		if (amount > 0) {
-			transfer(holder, amount);
-		}
-		return amount;
-	} 
-
-	function mintForFounders(
-		address _teamMultisig, uint256 _amount, uint256 _unlockedAt)
-	private
-	{
-		
-		mint(tokenInfo.founders_account.holder, _amount);
-		tokenInfo.founders_account.lock(_teamMultisig, _amount, _unlockedAt);
-		
-	}
-////////////////////////////////////////////////////////////////////////////////
-
-
-	function recoverTokens(ERC20Basic token) public onlyOwner { // override
-		super.recoverTokens(token);
-		uint256 keep = tokenInfo.founders_account.account.totalSupply();
-		RecoverVaultOp.recoverVaultTokens(tokenInfo.founders_account.holder, token, owner, keep);
-		uint256 keep2 = tokenInfo.vote_account.account.totalSupply();
-		RecoverVaultOp.recoverVaultTokens(tokenInfo.vote_account.holder, token, owner, keep2);
-	}
-
-	function recoverWeis() public onlyOwner  { // ether  // override
-		super.recoverWeis();
-		RecoverVaultOp.recoverVaultWeis(tokenInfo.founders_account.holder, owner, 0);
-		RecoverVaultOp.recoverVaultWeis(tokenInfo.vote_account.holder, owner, 0);
-	}
+	// function recoverWeis() public onlyOwner  { // ether  // override
+	// 	super.recoverWeis();
+	// 	// RecoverVaultOp.recoverVaultWeis(tokenInfo.founders_account.holder, owner, 0);
+	// }
 
 
 }
 
 
-contract IUpgradeable {
-	function upgrade() public;
-	function receiveUpgrade(address to, uint256 amount, uint256 lockEndAt, uint256 vaultType) public;
-}
-
+ 
 library CrowdsaleTokenHelper {
 	using SafeMath for uint256; 
-	using FreezeVaultOp for FreezeVaultOp.t;
+	using FreezeBalanceOp for FreezeBalanceOp.t;
 	using BalanceOp for BalanceOp.t;
 
 	event UpdatedTokenInformation(string newName, string newSymbol); 
@@ -368,21 +192,22 @@ library CrowdsaleTokenHelper {
 	event ReceiveUpgrade(address indexed _from, address indexed _to, uint256 _value, uint256 lockEndAt, uint256 vaultType);
 
 
-	struct Proposal {
-		uint256 id; // zero based
+	// struct Proposal {
+	// 	uint256 id; // zero based
 
-		uint256 minProposal; // init
-		uint256 passGoal; // pass
+	// 	uint256 minProposal; // init
+	// 	uint256 passGoal; // pass
 
-		address initiator;
-		string title;
-		string url;
-		uint256 endDate;
-		uint256 total;
-		mapping(address => uint256) votes;
+	// 	address initiator;
+	// 	string title;
+	// 	string url;
+	// 	uint256 endDate;
+	// 	uint256 total;
+	// 	mapping(address => uint256) votes;
 
 
-	}
+	// }
+
 
 	struct t {
 		
@@ -392,9 +217,6 @@ library CrowdsaleTokenHelper {
 		uint256 decimals;
 
 		address sale;
-		uint256 voteLockSeconds;
-
-		uint256 numProposals;
 
 		address releaseAgent;
 		bool released;
@@ -409,16 +231,8 @@ library CrowdsaleTokenHelper {
 		address outToken;
 
 		mapping(address => bool) transferAgents;
-		mapping(uint256 => Proposal) proposals;
 
-
-		FreezeVaultOp.t founders_account;
-		FreezeVaultOp.t vote_account;
  
-
-		BalanceOp.t founders_burnt;  
-		BalanceOp.t upgrade_burnt;
-
 	}
 
 	// solium-disable-next-line indentation
@@ -431,109 +245,17 @@ library CrowdsaleTokenHelper {
 	}
 
 
- 
-
-	function unlockfoundersToken(t storage _this, address _to)
-	internal
-	{
-		_this.founders_account.unlock(_to);
-	} 
-
-	// solium-disable-next-line indentation
-	function startProposal(t storage _this, address initiator, string title, string url, uint256 more_amount,
-		uint256 endDate, uint256 totalTokens)
-	internal
-	returns(uint256 ProposalID)
-	{
-		uint256 minProposal = totalTokens * 1 / 100;
-		uint256 passGoal = totalTokens * 5 / 100;
-		
-		_this.vote_account.lock(initiator, more_amount, endDate);
-		
-		uint256 amount = _this.vote_account.account.balanceOf(initiator);
-		require(amount >= minProposal);
-		uint256 id = _this.numProposals++;
-		_this.proposals[id] = CrowdsaleTokenHelper.Proposal(id, minProposal, passGoal,
-			initiator, title, url, endDate, amount);
-		_this.proposals[id].votes[initiator] = amount;
-		return id; 
-	}
-
-
-
-
-
-
-	function voteProposal(t storage _this, address votor, uint256 id, uint256 more_amount, uint256 endDate)
-	internal 
-	{
-		require(id < _this.numProposals);
-		CrowdsaleTokenHelper.Proposal storage p = _this.proposals[id];
- 
-		require(MiscOp.currentTime() < p.endDate);
-
-		_this.vote_account.lock(votor, more_amount, endDate);
-		uint256 amount = _this.vote_account.account.balanceOf(votor);
-		uint256 v = p.votes[votor];
-		if (v < amount) {
-			uint256 c = amount - v;
-			p.votes[votor] = amount;
-			p.total += c;
-		}
-	}
-
-
-	function unlockVotableToken(t storage _this)
-	internal
-	{
-		_this.vote_account.unlock(msg.sender);
-	}
-
-
-
-	function voteTotalSupply(t storage _this) internal view returns(uint256) {
-		return _this.vote_account.account.totalSupply();
-	}
-	function voteBalanceOf(t storage _this, address _owner) internal view returns(uint256) {
-		return _this.vote_account.account.balanceOf(_owner);
-	}
-
-
-
-
-
-	function destroyfoundersAccount(t storage _this, address user)
-	internal  
-	{
-		uint256 amount = _this.founders_account.account.balanceOf(user);
-		if (amount > 0) {
-			_this.founders_account.account.burn(user, amount);
-			_this.founders_burnt.mint(user, amount);
-		}
-	}
-
-	function informReceiver(t storage _this, address user, address beneficiary, uint256 amount, uint256 unlockedAt, uint256 vaultType)
-	internal
-	{
-		if (amount > 0) {
-			_this.upgrade_burnt.mint(user, amount);
-			IUpgradeable(_this.outToken).receiveUpgrade(beneficiary, amount, unlockedAt, vaultType);
-			emit Upgrade(user, _this.outToken, amount, unlockedAt, vaultType);
-		}
-	}
-
+  
 
 
 	// solium-disable-next-line indentation
-	function link(t storage _this, address _sale, TokenVault _voteVault,
-		TokenVault _foundersVault, ERC20Basic token, address releaseAgent)
+	function link(t storage _this, address _sale, address releaseAgent)
 	internal 
 	{
 		_this.sale = _sale;
-		_this.vote_account.holder = _voteVault;
-		_this.vote_account.token = token;
-		_this.founders_account.holder = _foundersVault;
-		_this.founders_account.token = token;
+		
+		// _this.founders_account.holder = _foundersVault;
+		// _this.founders_account.token = token;
 
 		_this.releaseAgent = releaseAgent; 
 	}

@@ -1,9 +1,9 @@
 
-pragma solidity ^ 0.4.23;
+pragma solidity ^ 0.4.24;
 
 import "./ERC20.sol";
 import "./Util.sol";
-import "./StandardToken.sol";
+import "./ERC20Token.sol";
 import "./Ownable.sol";
 
 
@@ -63,7 +63,7 @@ contract TokenVault
 
 
 	modifier fromTransferAgent() {
-		require(msg.sender == transferAgent);
+		MiscOp.requireEx(msg.sender == transferAgent);
 		_;
 	}
 	function transferERC20Basic(ERC20Basic token, address to, uint256 amount) 
@@ -100,9 +100,9 @@ contract TokenVault
 	// 	SortUtil.quickSort(ll,0,len-1,true);
 	// 	SortUtil.quickSort(ll,0,len-1,false);
 	// 	SortUtil.quickSort(ll,0,len-1,true);
-	// 	require(ll[3].key==len-1-3);
+	// 	MiscOp.requireEx(ll[3].key==len-1-3);
 	// 	SortUtil.quickSort(ll,0,len-1,false);
-	// 	require(ll[3].key==3);
+	// 	MiscOp.requireEx(ll[3].key==3);
 	// }
 
 	// 	// Uint256List.t all;
@@ -113,7 +113,22 @@ contract TokenVault
 
 
 
-library FreezeVaultOp {
+library VaultBalanceOp {
+	using SafeMath for uint256; 
+	using BalanceOp for BalanceOp.t; 
+
+	struct t {
+		BalanceOp.t account;
+		TokenVault holder;
+		ERC20 token;
+	}
+
+}
+
+
+
+
+library FreezeBalanceOp {
 	using SafeMath for uint256; 
 	using BalanceOp for BalanceOp.t; 
 
@@ -141,24 +156,11 @@ library FreezeVaultOp {
 
 
 	// solium-disable-next-line indentation
-	// function xlock(BalanceOp.t storage d, 
-	// 	TokenTypeLib.AddressInt storage freezeEnds, 
-	// 	address _who, uint256 amount, uint256 unlockedAt) 
-	// internal 
-	// {
-	// 	if(amount>0){
-	// 		d.mint(_who, amount);
-	// 		freezeEnds.dic[_who] = unlockedAt;
-	// 	}
-	// }
-
-
-	// solium-disable-next-line indentation
-	function lock(FreezeVaultOp.t storage _this, 
+	function lock(FreezeBalanceOp.t storage _this, 
 		address to, uint256 amount, uint256 unlockedAt) 
 	internal 
 	{
-		// require(msg.sender == to);
+		// MiscOp.requireEx(msg.sender == to);
 		_this.account.mint(to, amount);
 		_this.freezeEnds.dic[to] = unlockedAt;
 		// VaultOp.transferERC20Basic(_this.token, _this.holder, amount);
@@ -166,7 +168,7 @@ library FreezeVaultOp {
 
 
 // needed for upgrade
-	function forceUnlock(FreezeVaultOp.t storage _this, address _to) 
+	function forceUnlock(FreezeBalanceOp.t storage _this, address _to) 
 	internal 
 	{
 		uint256 _amount = _this.account.balanceOf(_to);
@@ -176,7 +178,7 @@ library FreezeVaultOp {
 		}
 	}
 
-	function unlock(FreezeVaultOp.t storage _this, address _to) 
+	function unlock(FreezeBalanceOp.t storage _this, address _to) 
 	internal 
 	{
 		uint256 unlockedAt = _this.freezeEnds.dic[_to]; 
@@ -189,33 +191,6 @@ library FreezeVaultOp {
 
 
 
-
-	// function xunlockToken(
-	// 	BalanceOp.t storage d,
-	// 	TokenTypeLib.AddressInt storage freezeEnds, 
-	// 	address _to,
-	// 	ERC20Basic token) 
-	// internal 
-	// {
-	// 	uint256 unlockedAt = freezeEnds.dic[_to]; 
-	// // solium-disable-next-line security/no-block-members
-	// 	if (now >= unlockedAt) { 
-	// 		xforceUnlockToken(d, _to, token);
-	// 	}
-	// }
-
-	// function xforceUnlockToken(
-	// 	BalanceOp.t storage d,
-	// 	address _to,
-	// 	ERC20Basic token) 
-	// internal 
-	// {
-	// 	uint256 _amount = d.balanceOf(_to);
-	// 	if (_amount > 0) {
-	// 		d.burn(_to, _amount);
-	// 		token.transfer(_to, _amount);
-	// 	}
-	// }
 
 
 

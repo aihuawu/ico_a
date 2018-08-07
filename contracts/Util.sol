@@ -1,5 +1,5 @@
 
-pragma solidity ^ 0.4.23;
+pragma solidity ^ 0.4.24;
 
 
 import "./ERC20.sol";
@@ -40,8 +40,45 @@ library MiscOp {
 		return block.timestamp;
 		// return now;
 	}
+
+	function requireEx(bool condition) 
+	internal pure 
+	{
+		// https://ethereum.stackexchange.com/questions/15166/difference-between-require-and-assert-and-the-difference-between-revert-and-thro
+		// solium-disable-next-line security/no-block-members
+		require(condition, "require failed"); //  refund the remaining gas
+		// assert(condition); // using up all remaining gas
+		// return now;
+	}
 }
 
+
+/**
+ * Utility library of inline functions on addresses
+ */
+library AddressUtils {
+
+  /**
+   * Returns whether the target address is a contract
+   * @dev This function will return false if invoked during the constructor of a contract,
+   * as the code is not actually created until after the constructor finishes.
+   * @param addr address to check
+   * @return whether the target address is a contract
+   */
+  function isContract(address addr) internal view returns (bool) {
+    uint256 size;
+    // XXX Currently there is no better way to check if there is a contract in an address
+    // than to check the size of the code at that address.
+    // See https://ethereum.stackexchange.com/a/14016/36603
+    // for more details about how this works.
+    // TODO Check this again before the Serenity release, because all addresses will be
+    // contracts then.
+    // solium-disable-next-line security/no-inline-assembly
+    assembly { size := extcodesize(addr) }
+    return size > 0;
+  }
+
+}
 
 
 
@@ -86,7 +123,7 @@ library SortUtil {
 }
 
 
-// https://github.com/aragon/zeppelin-solidity/blob/master/contracts/token/StandardToken.sol
+// https://github.com/aragon/zeppelin-solidity/blob/master/contracts/token/ERC20Token.sol
 
 library BalanceOp {
 	using SafeMath for uint256; 

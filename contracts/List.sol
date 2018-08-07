@@ -1,9 +1,9 @@
 
-pragma solidity ^ 0.4.23;
+pragma solidity ^ 0.4.24;
 
 import "./ERC20.sol";
 import "./Util.sol";
-import "./StandardToken.sol";
+import "./ERC20Token.sol";
 import "./Ownable.sol";
 import "./Vault.sol";
 import "./CrowdsaleToken.sol";
@@ -28,7 +28,7 @@ library mlist_address { // memory list
 	struct t {
 		address[] ls;
 		uint256 len;
-		uint256 capacity;
+		// uint256 capacity;
 	}
 
 	function size(t memory _this)
@@ -36,7 +36,7 @@ library mlist_address { // memory list
 	pure
 	returns(uint256)
 	{
-		return _this.ls.length;
+		return _this.len;
 	}
 
 	function at(t memory _this, uint256 idx)
@@ -60,7 +60,7 @@ library mlist_address { // memory list
 	pure
 	{
 		_this.len = 0;
-		_this.capacity = 0;
+		// _this.capacity = 0;
 		delete _this.ls;
 	}
 
@@ -69,7 +69,7 @@ library mlist_address { // memory list
 	pure
 	{
 		uint256 len = _this.len;
-		uint256 capacity = _this.capacity;
+		uint256 capacity = _this.ls.length;
 		if(!(len < capacity)) {
 			capacity = capacity*3/2+8;
 			address[] memory ls = _this.ls;
@@ -78,18 +78,20 @@ library mlist_address { // memory list
 				ls2[i] = ls[i];
 			}
 			_this.ls = ls2;
-			_this.capacity = capacity;
+			// _this.capacity = capacity;
 			delete ls;
 		}
 	}
 }
 
+
+// mlist<uint256>
 library mlist_uint256 { // memory list
 	
 	struct t {
 		uint256[] ls;
 		uint256 len;
-		uint256 capacity;
+		// uint256 capacity;
 	}
 
 	function size(t memory _this)
@@ -97,7 +99,7 @@ library mlist_uint256 { // memory list
 	pure
 	returns(uint256)
 	{
-		return _this.ls.length;
+		return _this.len;
 	}
 
 	function at(t memory _this, uint256 idx)
@@ -121,7 +123,7 @@ library mlist_uint256 { // memory list
 	pure
 	{
 		_this.len = 0;
-		_this.capacity = 0;
+		// _this.capacity = 0;
 		delete _this.ls;
 	}
 
@@ -130,7 +132,7 @@ library mlist_uint256 { // memory list
 	pure
 	{
 		uint256 len = _this.len;
-		uint256 capacity = _this.capacity;
+		uint256 capacity = _this.ls.length;
 		if(!(len < capacity)) {
 			capacity = capacity*3/2+8;
 			uint256[] memory ls = _this.ls;
@@ -139,12 +141,14 @@ library mlist_uint256 { // memory list
 				ls2[i] = ls[i];
 			}
 			_this.ls = ls2;
-			_this.capacity = capacity;
+			// _this.capacity = capacity;
 			delete ls;
 		}
 	}
 }
 
+
+// mlist<keyvalue>
 library mlist_keyvalue { // memory list
 	
 	struct keyvalue {
@@ -154,7 +158,7 @@ library mlist_keyvalue { // memory list
 	struct t {
 		keyvalue[] ls;
 		uint256 len;
-		uint256 capacity;
+		// uint256 capacity;
 	}
 
 	function size(t memory _this)
@@ -162,7 +166,7 @@ library mlist_keyvalue { // memory list
 	pure
 	returns(uint256)
 	{
-		return _this.ls.length;
+		return _this.len;
 	}
 
 	function at(t memory _this, uint256 idx)
@@ -173,7 +177,7 @@ library mlist_keyvalue { // memory list
 		return _this.ls[idx];
 	}
 
-	function add(t memory _this, keyvalue memory val)
+	function add(t memory _this, keyvalue val)
 	internal
 	pure
 	{
@@ -186,7 +190,7 @@ library mlist_keyvalue { // memory list
 	pure
 	{
 		_this.len = 0;
-		_this.capacity = 0;
+		// _this.capacity = 0;
 		delete _this.ls;
 	}
 
@@ -195,7 +199,7 @@ library mlist_keyvalue { // memory list
 	pure
 	{
 		uint256 len = _this.len;
-		uint256 capacity = _this.capacity;
+		uint256 capacity = _this.ls.length;
 		if(!(len < capacity)) {
 			capacity = capacity*3/2+8;
 			keyvalue[] memory ls = _this.ls;
@@ -204,11 +208,12 @@ library mlist_keyvalue { // memory list
 				ls2[i] = ls[i];
 			}
 			_this.ls = ls2;
-			_this.capacity = capacity;
+			// _this.capacity = capacity;
 			delete ls;
 		}
 	}
 }
+
 
 
 // list<address>
@@ -429,7 +434,7 @@ library one_many_address_uint256 {
 		return _this.dic_ls[key].exists(val);
 	}
 
-	function oneFor(t storage _this, uint256 val)
+	function oneAt(t storage _this, uint256 val)
 	internal
 	view
 	returns(address)
@@ -493,7 +498,7 @@ library one_many_uint256_uint256 {
 		return _this.dic_ls[key].exists(val);
 	}
 
-	function oneFor(t storage _this, uint256 val)
+	function oneAt(t storage _this, uint256 val)
 	internal
 	view
 	returns(uint256)

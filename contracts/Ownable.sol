@@ -1,11 +1,11 @@
 
-pragma solidity ^ 0.4.23;
+pragma solidity ^ 0.4.24;
 
 
 
 import "./ERC20.sol";
 import "./Util.sol";
-import "./StandardToken.sol";
+import "./ERC20Token.sol";
 
 
 contract Ownable {
@@ -19,7 +19,7 @@ contract Ownable {
 		owner = msg.sender;
 	}
 	modifier onlyOwner() {
-		require(msg.sender == owner);
+		MiscOp.requireEx(msg.sender == owner);
 		_;
 	}
 	
@@ -27,7 +27,7 @@ contract Ownable {
 	public 
 	onlyOwner 
 	{
-		require(_newOwner != address(0));
+		MiscOp.requireEx(_newOwner != address(0));
 		emit OwnershipTransferred(owner, _newOwner);
 		owner = _newOwner;
 	}
@@ -38,7 +38,7 @@ contract OwnableEx is Ownable {
 	address master;	// we use it for smart contract owner
 
 	modifier onlyMaster() {
-		require(msg.sender==address(master));
+		MiscOp.requireEx(msg.sender==address(master));
 		_;
 	}
 }
