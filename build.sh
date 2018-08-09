@@ -12,6 +12,7 @@
 #./ethereumwallet --rpc /develop/app/ethereum/geth.ipc --networkid 1235
 
 # /develop/app/ethereumwallet/ethereumwallet --rpc /develop/app/ethereum/geth.ipc 
+# /develop/app/mist/mist --rpc /develop/app/ethereum/geth.ipc 
 
 # npm --proxy http://localhost:8118 install -g @types/express express body-parser cookie-parser multer @types/sequelize sequelize @types/pg pg
 

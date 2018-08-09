@@ -3,7 +3,7 @@
 pragma solidity ^ 0.4.24;
 
 
-contract ERC777Token {
+contract ERC777 {
 	function name() public view returns(string);
 	function symbol() public view returns(string);
 	function totalSupply() public view returns(uint256);
@@ -36,6 +36,13 @@ contract ERC777Token {
 }
 
 
+
+contract ERC820Registry {
+	function getManager(address _addr) public view returns(address);
+	function setManager(address _addr, address _newManager) external;
+	function getInterfaceImplementer(address _addr, bytes32 _interfaceHash) external view returns(address);
+	function setInterfaceImplementer(address _addr, bytes32 _interfaceHash, address _implementer) external;
+}
 
 contract ERC777TokensSender {
 	function tokensToSend(

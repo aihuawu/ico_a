@@ -6,13 +6,6 @@ import "./ERC20.sol";
 import "./ERC777.sol";
 
 
-contract ERC820Registry {
-	function getManager(address _addr) public view returns(address);
-	function setManager(address _addr, address _newManager) external;
-	function getInterfaceImplementer(address _addr, bytes32 _interfaceHash) external view returns(address);
-	function setInterfaceImplementer(address _addr, bytes32 _interfaceHash, address _implementer) external;
-}
-
 contract ERC820Implementer {
 	ERC820Registry erc820Registry = ERC820Registry(0xa691627805d5FAE718381ED95E04d00E20a1fea6);
 
@@ -30,7 +23,7 @@ contract ERC820Implementer {
 		erc820Registry.setManager(this, _newManager);
 	}
 }
-contract ERC777BaseToken is ERC777Token, ERC820Implementer {
+contract ERC777BaseToken is ERC777, ERC820Implementer {
 	using SafeMath for uint256;
 
 	string internal mName;
@@ -284,7 +277,7 @@ contract ERC777BaseToken is ERC777Token, ERC820Implementer {
 
 
 
-contract ERC777ERC20BaseToken is ERC20, ERC777BaseToken {
+contract ERC777Token is ERC20, ERC777BaseToken {
 	bool internal mErc20compatible;
 
 	mapping(address => mapping(address => bool)) internal mAuthorized;
