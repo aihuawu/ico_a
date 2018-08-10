@@ -110,28 +110,28 @@ Recoverable
 
 	///////////////////////////////////////////////////////////////////////////
 
-	function sell(address token, uint256 price, uint256 tokenAmount)
+	function sell(address token, uint256 tokenAmount, uint256 weis)
 	external
 	returns(uint256)
 	{
 		address user = msg.sender;
 		MiscOp.requireEx(token != 0x0);
 		MiscOp.requireEx(user != 0x0);
-		MiscOp.requireEx(price != 0x0);
+		MiscOp.requireEx(weis != 0x0);
 		MiscOp.requireEx(tokenAmount != 0x0);
-		return infoOp.sell(token, user, price, tokenAmount);
+		return infoOp.sell(token, user, tokenAmount, weis);
 	}
 
-	function buy(address token, uint256 price, uint256 weis)
+	function buy(address token, uint256 tokenAmount, uint256 weis)
 	external
 	returns(uint256)
 	{
 		address user = msg.sender;
 		MiscOp.requireEx(token != 0x0);
 		MiscOp.requireEx(user != 0x0);
-		MiscOp.requireEx(price != 0x0);
+		MiscOp.requireEx(tokenAmount != 0x0);
 		MiscOp.requireEx(weis != 0x0);
-		return infoOp.buy(token, user, price, weis);
+		return infoOp.buy(token, user, tokenAmount, weis);
 	}
 
 
@@ -267,10 +267,31 @@ library ExchangeHelper
 	}
 
 	struct TokenAccountInfo {
-		mapping(address => mapping(address => uint256)) token_user_id;
+		mapping(address => mapping(address => uint256)) token_user_accountId;
 		mapping(uint256 => TokenAccountEntry) table; /* key is accountId */
-		one_many_address_uint256.t tokenDic; /* key is token address */
-		one_many_address_uint256.t userDic; /* key is user address */
+		one_many_address_uint256.t tokenDic; 	/* token <-> accountId */
+		one_many_address_uint256.t userDic; 	/* user <-> accountId */
+	}
+
+	struct ExTokenInfo {
+		mapping(address => mapping(uint256 => uint256)) token_tokenId_exTokenId;
+		one_many_address_uint256.t tokenDic; 	/* token <-> exTokenId[] */
+		one_many_uint256_uint256.t tokenIdDic; 	/* tokenId <-> exTokenId[] */
+	}
+
+	struct ERC721TokenAccountInfo {
+		ExTokenInfo exToken;
+		one_many_address_uint256.t userDic; 	/* owner <-> exTokenId[] */
+	}
+
+
+	struct ERC1203TokenAccountInfo { // multi-class fungible token
+		ExTokenInfo exToken;
+
+		mapping(uint256 => mapping(address => uint256)) exTokenId_user_accountId;
+		mapping(uint256 => TokenAccountEntry) table; /* key is accountId */
+		one_many_uint256_uint256.t exTokenIdDic; 	/* exTokenId <-> accountId */
+		one_many_uint256_uint256.t userDic; 	/* user <-> accountId */
 	}
 
 
@@ -287,8 +308,8 @@ library ExchangeHelper
 		// uint256 createTime; 
 	}
 	struct BuyOrderEntry {
-		// uint256 tokenAmount;	// in token unit e.g. tnano
-		uint256 price; 	// in wei
+		uint256 tokenAmount;	// todo
+		// uint256 price; 	// in wei
 		uint256 weis;	// in wei	weis = tokenAmount * price
 		uint256 weisLeft;
 		// uint256 cancelled_tokenAmount;
@@ -299,10 +320,10 @@ library ExchangeHelper
 		uint256 closeTime;
 	}
 	struct SellOrderEntry {
-		uint256 price; 	// in wei
+		// uint256 price; 	// in wei
 		uint256 tokenAmount;	// in token unit e.g. tnano
 		uint256 tokenAmountLeft;
-		// uint256 weis;	// in wei	weis = tokenAmount * price
+		uint256 weis;	// todo
 		// uint256 cancelled_tokenAmount;
 		// uint256 filled_tokenAmount;
 		// uint256 filled_weis;
@@ -312,20 +333,30 @@ library ExchangeHelper
 	}
 
 
-	struct OneOrderInfo {
-		one_many_address_uint256.t tokenDic; /* key is token address */
-		one_many_address_uint256.t userDic; /* key is user address */
-		// one_many_address_uint256.t closedUserDic; /* key is user address */
+	struct ERC20PartOrderInfo {
+		one_many_address_uint256.t tokenDic; 	/* token <-> orderId */
+		one_many_address_uint256.t userDic; 	/* user <-> orderId */
+	}
+
+	struct ERC721PartOrderInfo {
+		one_many_address_uint256.t tokenDic; 	/* token <-> orderId */
+		one_many_uint256_uint256.t exTokenDic; 	/* exTokenId <-> orderId */
+		one_many_address_uint256.t userDic; 	/* user <-> orderId */
+	}
+	struct ERC1203PartOrderInfo {
+		one_many_address_uint256.t tokenDic; 	/* token <-> orderId */
+		one_many_uint256_uint256.t exTokenDic; 	/* exTokenId <-> orderId */
+		one_many_address_uint256.t userDic; 	/* user <-> orderId */
 	}
 
 
 	struct OrderInfo {
 		mapping(uint256 => BuyOrderEntry) buyTable; /* key is orderId */
-		OneOrderInfo buy;
-		OneOrderInfo buyClosed;
+		ERC20PartOrderInfo buy;
+		ERC20PartOrderInfo buyClosed;
 		mapping(uint256 => SellOrderEntry) sellTable; /* key is orderId */
-		OneOrderInfo sell;
-		OneOrderInfo sellClosed;
+		ERC20PartOrderInfo sell;
+		ERC20PartOrderInfo sellClosed;
 	}
 
 
@@ -387,7 +418,7 @@ library ExchangeHelper
 
 	struct OrderTransactionEntry {
 		uint256 tokenAmount;
-		uint256 price; 	// in wei
+		// uint256 price; 	// in wei
 		uint256 weis;
 		uint256 createTime;
 	}
@@ -413,7 +444,7 @@ library ExchangeHelper
 		uint256 orderIdBuy;
 		uint256 transactionType;
 		uint256 weis;
-		uint256 price; 	// in wei
+		// uint256 price; 	// in wei
 		uint256 tokenAmount;
 		uint256 createTime;
 	}
@@ -497,7 +528,7 @@ library ExchangeHelper
 	private view
 	returns(FullTokenTransactionEntry[] memory)
 	{
-		uint256 accountId = _this.accounts.token_user_id[token][user];
+		uint256 accountId = _this.accounts.token_user_accountId[token][user];
 		return findTokenTransactionListByAccount(_this, accountId);
 	}
 
@@ -542,7 +573,7 @@ library ExchangeHelper
 				orderIdBuy : oi.orderBuyDic.oneAt(transactionId),
 				transactionType : kTransaction_orderMatch,
 				tokenAmount : e.tokenAmount,
-				price : e.price,
+				// price : e.price,
 				weis : e.weis,
 				createTime : e.createTime});
 		} 
@@ -576,7 +607,7 @@ library ExchangeHelper
 	view
 	returns(uint256)
 	{
-		uint256 accountId = _this.accounts.token_user_id[token][user];
+		uint256 accountId = _this.accounts.token_user_accountId[token][user];
 		TokenAccountEntry storage ae = _this.accounts.table[accountId];
 		return ae.tokenAmount;
 	}
@@ -708,14 +739,14 @@ library ExchangeHelper
 	{
 		_this.nextId = 1;	// always > 0
 	}
-	function buy(t storage _this, address token, address user, uint256 price, uint256 weis)
+	function buy(t storage _this, address token, address user, uint256 tokenAmount, uint256 weis)
 	internal
 	returns(uint256)
 	{
-		uint256 buyOrderId = buyLimitPrice(_this, token, user, price, weis);
+		uint256 buyOrderId = buyLimitPrice(_this, token, user, tokenAmount, weis);
 		OrderInfo storage oi = _this.orders;
 		BuyOrderEntry storage oe = oi.buyTable[buyOrderId];
-		mlist_uint256.t memory ls = findSellOrders(_this, token, price); 
+		mlist_uint256.t memory ls = findSellOrders(_this, token, tokenAmount, weis); 
 		for (uint256 i = 0; i < ls.size(); i++) {
 			if (oe.weis <= 0) {
 				break;
@@ -725,14 +756,14 @@ library ExchangeHelper
 		}
 		return buyOrderId;
 	}
-	function sell(t storage _this, address token, address user, uint256 price, uint256 tokenAmount)
+	function sell(t storage _this, address token, address user, uint256 tokenAmount, uint256 weis)
 	internal
 	returns(uint256)
 	{
-		uint256 sellOrderId = sellLimitPrice(_this, token, user, price, tokenAmount);
+		uint256 sellOrderId = sellLimitPrice(_this, token, user, tokenAmount, weis);
 		OrderInfo storage oi = _this.orders;
 		SellOrderEntry storage oe = oi.sellTable[buyOrderId];
-		mlist_uint256.t memory ls = findBuyOrders(_this, token, price);
+		mlist_uint256.t memory ls = findBuyOrders(_this, token, tokenAmount, weis);
 		for (uint256 i = 0; i < ls.size(); i++) {
 			if (oe.tokenAmount <= 0) {
 				break;
@@ -784,7 +815,7 @@ library ExchangeHelper
 
 
 
-	function moveCloseOrder(OneOrderInfo storage oi, OneOrderInfo storage oiClosed, uint256 orderId)
+	function moveCloseOrder(ERC20PartOrderInfo storage oi, ERC20PartOrderInfo storage oiClosed, uint256 orderId)
 	private
 	{
 		address token = oi.tokenDic.oneAt(orderId);
@@ -799,7 +830,7 @@ library ExchangeHelper
 	function safeAddTokenAccount(t storage _this, address token, address user) 
 	private returns(uint256)
 	{
-		uint256 accountId = _this.accounts.token_user_id[token][user];
+		uint256 accountId = _this.accounts.token_user_accountId[token][user];
 		if (accountId == 0) {
 			accountId = nextId(_this);
 			_this.tokenAmount.safeAdd(token);
@@ -808,12 +839,12 @@ library ExchangeHelper
 			_this.accounts.userDic.add(user, accountId);
 
 			_this.accounts.table[accountId] = TokenAccountEntry({ tokenAmount: 0 });
-			_this.accounts.token_user_id[token][user] = accountId;
+			_this.accounts.token_user_accountId[token][user] = accountId;
 		}
 		return accountId;
 	}
 
-	function findBuyOrders(t storage _this, address token, uint256 price) 
+	function findBuyOrders(t storage _this, address token, uint256 tokenAmount, uint256 weis) 
 	private view
 	returns(mlist_uint256.t memory)
 	{
@@ -823,14 +854,14 @@ library ExchangeHelper
 		for (uint256 i = 0; i < ls.size(); i++) {
 			uint256 oId = ls.at(i);
 			BuyOrderEntry storage oe = oi.buyTable[oId];
-			if (oe.price >= price) {
+			if (oe.weis * tokenAmount >= weis * oe.tokenAmount) {
 				mls.add(oId);
 			}
 		}
 		return mls;
 	}
 	
-	function findSellOrders(t storage _this, address token, uint256 price) 
+	function findSellOrders(t storage _this, address token, uint256 tokenAmount, uint256 weis) 
 	private view
 	returns(mlist_uint256.t memory)
 	{ 
@@ -843,7 +874,7 @@ library ExchangeHelper
 		for (uint256 i = 0; i < ls.size(); i++) {
 			uint256 oId = ls.at(i); 
 			SellOrderEntry storage oe = oi.sellTable[oId]; 
-			if (oe.price <= price) {
+			if (oe.weis * tokenAmount <= weis * oe.tokenAmount) { 
 				mls.add(oId);
 			}
 		} 
@@ -945,7 +976,7 @@ library ExchangeHelper
 
 
 	// solium-disable-next-line indentation
-	function createOrderIndex(OneOrderInfo storage oi, address token, address user, uint256 orderId)
+	function createOrderIndex(ERC20PartOrderInfo storage oi, address token, address user, uint256 orderId)
 	private
 	{
 		oi.tokenDic.add(token, orderId);
@@ -980,11 +1011,12 @@ library ExchangeHelper
 		_this.transactions_wei.orderDic.add(orderId, transactionId);
 	}
 
-	function buyLimitPrice(t storage _this, address token, address user, uint256 price, uint256 weis)
+	function buyLimitPrice(t storage _this, address token, address user, uint256 tokenAmount, uint256 weis)
 	private
 	returns(uint256)
 	{
-		MiscOp.requireEx(price != 0);
+		MiscOp.requireEx(tokenAmount != 0);
+		MiscOp.requireEx(weis != 0);
 		safeAddTokenAccount(_this, token, user);
 		uint256 orderId = nextId(_this);
 
@@ -994,18 +1026,20 @@ library ExchangeHelper
 
 		uint256 ts = MiscOp.currentTime();
 		_this.orders.buyTable[orderId] = BuyOrderEntry({
-			price: price, weis: weis, weisLeft: weis,
+			// price: price, 
+			tokenAmount: tokenAmount, weis: weis, weisLeft: weis,
 			createTime: ts, closeTime: 0
 		});
 		createOrderIndex(_this.orders.buy, token, user, orderId);
 		return orderId;
 	}
 
-	function sellLimitPrice(t storage _this, address token, address user, uint256 price, uint256 tokenAmount)
+	function sellLimitPrice(t storage _this, address token, address user, uint256 tokenAmount, uint256 weis)
 	private
 	returns(uint256)
 	{
-		MiscOp.requireEx(price != 0);
+		MiscOp.requireEx(tokenAmount != 0);
+		MiscOp.requireEx(weis != 0);
 		safeAddTokenAccount(_this, token, user);
 		uint256 orderId = nextId(_this);
 
@@ -1015,7 +1049,8 @@ library ExchangeHelper
 
 		uint256 ts = MiscOp.currentTime();
 		_this.orders.sellTable[orderId] = SellOrderEntry({
-			price: price, tokenAmount: tokenAmount, tokenAmountLeft: tokenAmount,
+			// price: price, 
+			tokenAmount: tokenAmount, weis: weis, tokenAmountLeft: tokenAmount,
 			createTime: ts, closeTime: 0
 		});
 		createOrderIndex(_this.orders.sell, token, user, orderId);
@@ -1103,20 +1138,28 @@ library ExchangeHelper
 		MiscOp.requireEx(token == tokenB);
 		SellOrderEntry storage oeSell = _this.orders.sellTable[sellOrderId];
 		BuyOrderEntry storage oeBuy = _this.orders.buyTable[buyOrderId];
-		MiscOp.requireEx(oeSell.price <= oeBuy.price);
-		uint256 price = (oeSell.price.add(oeBuy.price)).div(2);
+		MiscOp.requireEx(oeSell.weis * oeBuy.tokenAmount <= oeBuy.weis * oeSell.tokenAmount);
+
 
 		// maximize deal
-		uint256 tokenAmount2 = oeSell.tokenAmountLeft; // match seller
-		uint256 weis2 = tokenAmount2.mul(price);
-		if (oeBuy.weis < weis2) { // match buyer  
-			tokenAmount2 = oeBuy.weis.div(price);
-			weis2 = tokenAmount2.mul(price);
+		uint256 tokenAmount2 = oeSell.tokenAmountLeft;
+		uint256 weis2 = oeBuy.weisLeft;
+		if (oeBuy.weisLeft < oeSell.tokenAmountLeft * oeSell.weis / oeSell.tokenAmount) {
+			weis2 = oeBuy.weisLeft;
+			tokenAmount2 = (weis2 * oeBuy.tokenAmount / oeBuy.weis + weis2 * oeSell.tokenAmount / oeSell.weis) / 2;
+		} else if (oeSell.tokenAmountLeft < oeBuy.weisLeft * oeBuy.tokenAmount / oeBuy.weis) {
+			tokenAmount2 = oeSell.tokenAmountLeft;
+			weis2 = (tokenAmount2 * oeSell.weis / oeSell.tokenAmount + tokenAmount2 * oeBuy.weis / oeBuy.tokenAmount) / 2;
+		} else {
+			weis2 = (oeBuy.weisLeft + oeSell.tokenAmountLeft * oeSell.weis / oeSell.tokenAmount) / 2;
+			tokenAmount2 = (oeSell.tokenAmountLeft + oeBuy.weisLeft * oeBuy.tokenAmount / oeBuy.weis) / 2;
 		}
+
 		if (tokenAmount2 > 0) {
 			// solium-disable-next-line indentation
 			transactionId = makeTransaction(_this,
-				price, tokenAmount2, weis2);
+				// price, 
+				tokenAmount2, weis2);
 
 			address seller = _this.orders.sell.userDic.oneAt(sellOrderId);
 			address buyer = _this.orders.buy.userDic.oneAt(buyOrderId);
@@ -1154,10 +1197,10 @@ library ExchangeHelper
 		SellOrderEntry storage oeSell = _this.orders.sellTable[sellOrderId];
 		BuyOrderEntry storage oeBuy = _this.orders.buyTable[buyOrderId];
 
-		if (oeBuy.weisLeft < oeBuy.price) {
+		if (oeBuy.weisLeft < oeBuy.weis / oeBuy.tokenAmount) {
 			closeBuyOrder(_this, buyOrderId);
 		}
-		if (oeSell.tokenAmountLeft == 0) {
+		if (oeSell.tokenAmountLeft < oeSell.tokenAmount / oeSell.weis) {
 			closeSellOrder(_this, sellOrderId);
 		}
 	}
@@ -1169,14 +1212,16 @@ library ExchangeHelper
 	function makeTransaction(t storage _this,
 		// address token, address seller, address buyer,
 		// 	uint256 sellOrderId, uint256 buyOrderId,
-		uint256 price, uint256 tokenAmount, uint256 weis)
+		// 
+		uint256 tokenAmount, uint256 weis)
 	private returns(uint256 transactionId)
 	{
 		transactionId = nextId(_this);
 		
 		uint256 ts = MiscOp.currentTime();
 		_this.transactions.transactions[transactionId] = OrderTransactionEntry({
-			price: price, tokenAmount: tokenAmount, weis: weis, createTime: ts
+			// price: price, 
+			tokenAmount: tokenAmount, weis: weis, createTime: ts
 		});
 		return transactionId;
 	}
