@@ -308,7 +308,7 @@ library ExchangeHelper
 		// uint256 createTime; 
 	}
 	struct BuyOrderEntry {
-		uint256 tokenAmount;	// todo
+		uint256 tokenAmount;	//  
 		// uint256 price; 	// in wei
 		uint256 weis;	// in wei	weis = tokenAmount * price
 		uint256 weisLeft;
@@ -323,7 +323,7 @@ library ExchangeHelper
 		// uint256 price; 	// in wei
 		uint256 tokenAmount;	// in token unit e.g. tnano
 		uint256 tokenAmountLeft;
-		uint256 weis;	// todo
+		uint256 weis;	//  
 		// uint256 cancelled_tokenAmount;
 		// uint256 filled_tokenAmount;
 		// uint256 filled_weis;
@@ -867,10 +867,10 @@ library ExchangeHelper
 	{ 
 		mlist_uint256.t memory mls;
 		mls.clear();
-		MiscOp.requireEx(mls.size() == 0);
+		// MiscOp.requireEx(mls.size() == 0);
 		OrderInfo storage oi = _this.orders;
 		list_uint256.t storage ls = oi.sell.tokenDic.listAt(token);
-		MiscOp.requireEx(ls.size() == 1);
+		// MiscOp.requireEx(ls.size() == 1);
 		for (uint256 i = 0; i < ls.size(); i++) {
 			uint256 oId = ls.at(i); 
 			SellOrderEntry storage oe = oi.sellTable[oId]; 
